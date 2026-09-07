@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memento</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    max-width: 720px; margin: 0 auto; padding: 24px 16px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #fafafa; color: #222;
+  }
+  h1 { font-size: 20px; margin: 0 0 16px; display: flex; justify-content: space-between; align-items: center; }
+  textarea {
+    width: 100%; min-height: 72px; padding: 8px; font: inherit;
+    border: 1px solid #ccc; border-radius: 6px; resize: vertical;
+  }
+  button {
+    padding: 6px 14px; font: inherit; border: 1px solid #ccc;
+    border-radius: 6px; background: #fff; cursor: pointer;
+  }
+  button.primary { background: #222; color: #fff; border-color: #222; }
+  button:hover { filter: brightness(0.95); }
+  .new-box { margin-bottom: 24px; }
+  .new-box button { margin-top: 8px; }
+  .memory {
+    background: #fff; border: 1px solid #e2e2e2; border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 10px;
+  }
+  .memory .date { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .memory .content { white-space: pre-wrap; word-break: break-word; }
+  .memory .actions { margin-top: 8px; }
+  .memory .actions button { font-size: 13px; padding: 3px 10px; margin-right: 6px; }
+  #login { max-width: 320px; margin: 120px auto; text-align: center; }
+  #login input {
+    width: 100%; padding: 8px; font: inherit; margin-bottom: 8px;
+    border: 1px solid #ccc; border-radius: 6px;
+  }
+  .error { color: #c00; font-size: 13px; }
+  .empty { color: #888; text-align: center; padding: 40px 0; }
+  #logoutBtn { font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="login" hidden>
+  <h1 style="justify-content:center">Memento</h1>
+  <form id="loginForm">
+    <input type="password" id="pw" placeholder="密码" autocomplete="current-password" required>
+    <button class="primary" type="submit" style="width:100%">登录</button>
+    <p class="error" id="loginErr"></p>
+  </form>
+</div>
+
+<main id="app" hidden>
+  <h1>Memento <button id="logoutBtn" hidden>退出登录</button></h1>
+  <div class="new-box">
+    <textarea id="newContent" placeholder="记一条……"></textarea>
+    <button class="primary" id="addBtn">保存</button>
+  </div>
+  <div id="list"></div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (res.status === 401) { showLogin(); throw new Error("unauthorized"); }
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).detail || msg; } catch {}
+    throw new Error(msg);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function showLogin() {
+  $("#login").hidden = false;
+  $("#app").hidden = true;
+}
+
+function showApp() {
+  $("#login").hidden = true;
+  $("#app").hidden = false;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function render(memories) {
+  const list = $("#list");
+  if (!memories.length) {
+    list.innerHTML = '<div class="empty">还没有任何记忆</div>';
+    return;
+  }
+  list.innerHTML = memories.map((m) => `
+    <div class="memory" data-id="${m.id}">
+      <div class="date">${esc(m.updated_at.slice(0, 10))} · #${m.id}</div>
+      <div class="content">${esc(m.content)}</div>
+      <div class="actions"><button class="editBtn">编辑</button></div>
+    </div>
+  `).join("");
+}
+
+async function load() {
+  render(await api("/api/memories"));
+}
+
+$("#loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#loginErr").textContent = "";
+  try {
+    await api("/api/login", {
+      method: "POST",
+      body: JSON.stringify({ password: $("#pw").value }),
+    });
+    $("#pw").value = "";
+    showApp();
+    await load();
+  } catch (err) {
+    if (err.message !== "unauthorized") $("#loginErr").textContent = err.message;
+    else $("#loginErr").textContent = "密码错误";
+  }
+});
+
+$("#addBtn").addEventListener("click", async () => {
+  const content = $("#newContent").value.trim();
+  if (!content) return;
+  await api("/api/memories", { method: "POST", body: JSON.stringify({ content }) });
+  $("#newContent").value = "";
+  await load();
+});
+
+$("#list").addEventListener("click", async (e) => {
+  const card = e.target.closest(".memory");
+  if (!card) return;
+  const id = card.dataset.id;
+
+  if (e.target.classList.contains("editBtn")) {
+    const contentEl = card.querySelector(".content");
+    const old = contentEl.textContent;
+    card.innerHTML = `
+      <textarea>${esc(old)}</textarea>
+      <div class="actions">
+        <button class="primary saveBtn">保存</button>
+        <button class="cancelBtn">取消</button>
+      </div>`;
+    card.querySelector("textarea").focus();
+  } else if (e.target.classList.contains("saveBtn")) {
+    const content = card.querySelector("textarea").value.trim();
+    if (!content) return;
+    await api(`/api/memories/${id}`, { method: "PUT", body: JSON.stringify({ content }) });
+    await load();
+  } else if (e.target.classList.contains("cancelBtn")) {
+    await load();
+  }
+});
+
+$("#logoutBtn").addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" });
+  showLogin();
+});
+
+(async () => {
+  const status = await api("/api/auth_status").catch(() => null);
+  if (status && status.auth_required && !status.authed) {
+    showLogin();
+  } else {
+    showApp();
+    if (status && status.auth_required) $("#logoutBtn").hidden = false;
+    await load();
+  }
+})();
+</script>
+</body>
+</html>

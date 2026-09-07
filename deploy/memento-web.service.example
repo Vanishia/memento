@@ -1,0 +1,13 @@
+[Unit]
+Description=Memento Web UI
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/memento
+EnvironmentFile=/opt/memento/.env
+ExecStart=/opt/memento/.venv/bin/memento-web
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

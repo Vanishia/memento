@@ -1,0 +1,40 @@
+# Memento nginx 配置示例（Web UI + MCP HTTP 端点）
+# 前提：域名已解析到本 VPS；先跑 `certbot --nginx -d memento.example.com` 签发证书，
+# certbot 会自动补全 ssl_certificate 等行并接管 80 端口的跳转。
+#
+# 鉴权分工：
+#   - Web UI（/）：应用自身校验 MEMENTO_PASSWORD（登录页 + Cookie）
+#   - MCP 端点（/mcp）：nginx 校验 Authorization: Bearer <token>
+
+server {
+    listen 443 ssl;
+    server_name memento.example.com;   # 改成你的域名
+
+    # 以下两行由 certbot 自动配置，此处仅为示意
+    # ssl_certificate     /etc/letsencrypt/live/memento.example.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/memento.example.com/privkey.pem;
+
+    # ---- MCP HTTP 端点（Bearer token 鉴权）----
+    # 把 change-me 改成一个足够长的随机串，例如 `openssl rand -hex 32` 的输出
+    location /mcp {
+        if ($http_authorization != "Bearer change-me-long-random-token") {
+            return 401;
+        }
+        proxy_pass http://127.0.0.1:8766;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Connection "";
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # streamable-http 需要关闭缓冲、拉长超时
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+
+    # ---- Web UI ----
+    location / {
+        proxy_pass http://127.0.0.1:8765;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}

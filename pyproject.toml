@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memento"
+version = "0.1.0"
+description = "A simple MCP memory store with a web UI"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.9,<2",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "python-dotenv>=1.0",
+    "tzdata>=2024.1",
+]
+
+[project.scripts]
+memento-mcp = "memento.mcp_server:main"
+memento-mcp-http = "memento.mcp_server:main_http"
+memento-web = "memento.web.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"memento.web" = ["static/*"]

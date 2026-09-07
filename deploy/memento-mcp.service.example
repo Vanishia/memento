@@ -1,0 +1,13 @@
+[Unit]
+Description=Memento MCP HTTP endpoint
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/memento
+EnvironmentFile=/opt/memento/.env
+ExecStart=/opt/memento/.venv/bin/memento-mcp-http
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -99,6 +99,13 @@ def update_memory(
     return {"ok": True}
 
 
+@app.delete("/api/memories/{memory_id}")
+def delete_memory(memory_id: int, _: None = Depends(require_auth)) -> dict:
+    if not service.delete_memory(memory_id):
+        raise HTTPException(status_code=404, detail="记忆不存在")
+    return {"ok": True}
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")

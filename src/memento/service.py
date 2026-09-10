@@ -25,6 +25,10 @@ def edit_memory(memory_id: int, content: str) -> bool:
     return repository.update(memory_id, content, _now())
 
 
+def delete_memory(memory_id: int) -> bool:
+    return repository.delete(memory_id)
+
+
 def memory_exists(memory_id: int) -> bool:
     return repository.get(memory_id) is not None
 

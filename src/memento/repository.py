@@ -27,6 +27,12 @@ def update(memory_id: int, content: str, ts: str) -> bool:
         return cur.rowcount > 0
 
 
+def delete(memory_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        return cur.rowcount > 0
+
+
 def get(memory_id: int) -> sqlite3.Row | None:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()

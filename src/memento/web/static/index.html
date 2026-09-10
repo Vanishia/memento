@@ -22,6 +22,8 @@
   }
   button.primary { background: #222; color: #fff; border-color: #222; }
   button:hover { filter: brightness(0.95); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.danger { color: #c00; border-color: #e0b0b0; }
   .new-box { margin-bottom: 24px; }
   .new-box button { margin-top: 8px; }
   .memory {
@@ -105,7 +107,7 @@ function render(memories) {
     <div class="memory" data-id="${m.id}">
       <div class="date">${esc(m.updated_at.slice(0, 10))} · #${m.id}</div>
       <div class="content">${esc(m.content)}</div>
-      <div class="actions"><button class="editBtn">编辑</button></div>
+      <div class="actions"><button class="editBtn">编辑</button><button class="danger delBtn">删除</button></div>
     </div>
   `).join("");
 }
@@ -132,11 +134,17 @@ $("#loginForm").addEventListener("submit", async (e) => {
 });
 
 $("#addBtn").addEventListener("click", async () => {
+  const btn = $("#addBtn");
   const content = $("#newContent").value.trim();
-  if (!content) return;
-  await api("/api/memories", { method: "POST", body: JSON.stringify({ content }) });
-  $("#newContent").value = "";
-  await load();
+  if (!content || btn.disabled) return;
+  btn.disabled = true;
+  try {
+    await api("/api/memories", { method: "POST", body: JSON.stringify({ content }) });
+    $("#newContent").value = "";
+    await load();
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 $("#list").addEventListener("click", async (e) => {
@@ -160,6 +168,11 @@ $("#list").addEventListener("click", async (e) => {
     await api(`/api/memories/${id}`, { method: "PUT", body: JSON.stringify({ content }) });
     await load();
   } else if (e.target.classList.contains("cancelBtn")) {
+    await load();
+  } else if (e.target.classList.contains("delBtn")) {
+    if (!confirm("确定删除这条记忆吗？")) return;
+    e.target.disabled = true;
+    await api(`/api/memories/${id}`, { method: "DELETE" });
     await load();
   }
 });

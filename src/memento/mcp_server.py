@@ -16,7 +16,7 @@ mcp = FastMCP("memento", host=config.mcp_host(), port=config.mcp_port())
 
 @mcp.tool()
 def pull() -> str:
-    """拉取最近的记忆条目（默认 5 条）。每次对话开始时调用以恢复上下文。"""
+    """拉取最近的记忆条目。*每次*对话开始时调用以恢复上下文。"""
     return service.pull_memories()
 
 
@@ -29,7 +29,7 @@ def write(content: str) -> str:
 
 @mcp.tool()
 def edit(id: int, content: str) -> str:
-    """编辑某一条记忆。id 为记忆编号，content 为替换后的完整内容。"""
+    """编辑某条记忆。id 为记忆编号，content 为替换后的完整内容。"""
     if service.edit_memory(id, content):
         return f"已更新（id={id}）"
     return f"错误：不存在 id={id} 的记忆"

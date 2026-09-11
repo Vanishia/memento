@@ -43,6 +43,12 @@ def pin(id: str, unpin: bool = False) -> str:
     return service.pin_memory(id)
 
 
+@mcp.tool()
+def search(keyword: str, since: str = "", until: str = "") -> str:
+    """查找更久远的记忆。单关键词搜索，此工具只搜索记忆库内记忆。keyword 为关键词；since/until 限定更新日期范围（YYYY-MM-DD），留空不限。"""
+    return service.search_memories(keyword, since, until)
+
+
 def main() -> None:
     """stdio 模式：由本机 MCP 客户端直接拉起。"""
     init_db()

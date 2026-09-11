@@ -13,6 +13,8 @@ PULL_LIMIT = 5
 
 PIN_LIMIT = 15
 
+SEARCH_LIMIT = 10
+
 
 def _now() -> str:
     # 保留微秒，保证同秒内多次写/改仍有严格的排序先后
@@ -73,6 +75,23 @@ def pull_memories(limit: int = PULL_LIMIT) -> str:
     if recent_rows:
         sections.append("短期：\n" + "\n".join(_format_line(r) for r in recent_rows))
     return "\n\n".join(sections)
+
+
+def search_memories(keyword: str, since: str = "", until: str = "") -> str:
+    """搜索记忆，结果按相关性排序，每行 `[id 日期] 内容`。"""
+    keyword = keyword.strip()
+    if not keyword:
+        return "错误：请提供关键词"
+    for label, date in (("since", since), ("until", until)):
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                return f"错误：{label} 日期格式应为 YYYY-MM-DD"
+    rows = repository.search(keyword, since, until, SEARCH_LIMIT)
+    if not rows:
+        return f"没有匹配「{keyword}」的记忆"
+    return "\n".join(_format_line(r) for r in rows)
 
 
 def list_memories() -> list[dict]:

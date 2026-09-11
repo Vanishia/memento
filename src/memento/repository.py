@@ -83,3 +83,21 @@ def list_all() -> list[sqlite3.Row]:
         return conn.execute(
             f"SELECT * FROM memories ORDER BY pinned DESC, {_ORDER}"
         ).fetchall()
+
+
+def search(
+    keyword: str, since: str = "", until: str = "", limit: int = 10
+) -> list[sqlite3.Row]:
+    """关键词子串搜索。相关性 = 关键词首次出现位置靠前，同位置按更新时间倒序。"""
+    sql = "SELECT * FROM memories WHERE content LIKE '%' || ? || '%'"
+    args: list = [keyword]
+    if since:
+        sql += " AND substr(updated_at, 1, 10) >= ?"
+        args.append(since)
+    if until:
+        sql += " AND substr(updated_at, 1, 10) <= ?"
+        args.append(until)
+    sql += " ORDER BY INSTR(content, ?) ASC, updated_at DESC LIMIT ?"
+    args += [keyword, limit]
+    with get_conn() as conn:
+        return conn.execute(sql, args).fetchall()

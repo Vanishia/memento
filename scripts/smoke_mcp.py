@@ -28,7 +28,7 @@ async def main() -> None:
             tools = await session.list_tools()
             names = [t.name for t in tools.tools]
             print("tools:", names)
-            assert names == ["pull", "write", "edit", "pin"]
+            assert names == ["pull", "write", "edit", "pin", "search"]
 
             r = await session.call_tool("write", {"content": "mcp 冒烟第一条"})
             print("write ->", r.content[0].text)
@@ -83,6 +83,21 @@ async def main() -> None:
             assert all("已置顶" in m for m in results[:15])
             assert "上限" in results[15]
             print("第 16 次 pin ->", results[15])
+
+            r = await session.call_tool("search", {"keyword": "上限测试"})
+            text = r.content[0].text
+            assert "上限测试第15条" in text and "上限测试第0条" not in text
+            print("search ->")
+            print(text)
+            r = await session.call_tool("search", {"keyword": "不存在的关键词xyz"})
+            assert "没有匹配" in r.content[0].text
+            print("search 无结果 ->", r.content[0].text)
+            r = await session.call_tool("search", {"keyword": "上限测试", "since": "2099-01-01"})
+            assert "没有匹配" in r.content[0].text
+            print("search since 未来 ->", r.content[0].text)
+            r = await session.call_tool("search", {"keyword": "上限测试", "since": "bad-date"})
+            assert "YYYY-MM-DD" in r.content[0].text
+            print("search 日期非法 ->", r.content[0].text)
             print("MCP 冒烟全部通过")
 
 

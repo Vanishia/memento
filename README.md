@@ -9,7 +9,8 @@
   - `write`：创建一条新记忆，自动附加时间戳
   - `edit`：按 id（pull 返回行首的两位字母）修改记忆，自动刷新时间戳
   - `pin`：置顶/解除置顶某条记忆（unpin=true 解除；置顶上限 15 条）
-- **Web UI**：查看全部记忆（最新在最上）、新增、编辑；密码登录（服务端校验）
+  - `search`：单关键词搜索记忆（默认最多 10 条，按相关性排序，可限定 since/until 日期范围）
+- **Web UI**：查看全部记忆（置顶在前）、新增、编辑；密码登录（服务端校验）
 
 ## 环境要求
 
@@ -135,6 +136,16 @@ sudo nginx -t && sudo systemctl reload nginx
   }
 }
 ```
+
+### 6. 升级
+
+```bash
+cd /opt/memento
+git pull
+sudo systemctl restart memento-web memento-mcp
+```
+
+数据库结构在启动时自动迁移，无需手工处理；无新增依赖时不用重装 pip 包。
 
 ## 冒烟测试
 

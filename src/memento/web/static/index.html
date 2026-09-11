@@ -54,6 +54,14 @@
     gap: 12px; margin: 16px 0 8px; font-size: 13px; color: #666;
   }
   .pager button { font-size: 13px; padding: 3px 10px; }
+  .pin-bar {
+    width: 100%; display: flex; align-items: center; gap: 6px;
+    margin-bottom: 10px; padding: 8px 14px; font-size: 13px; color: #555;
+    background: #fff; border: 1px solid #e2e2e2; border-radius: 8px;
+  }
+  .memory.pinned-card { border-left: 3px solid #222; }
+  #pinList { margin-bottom: 10px; }
+  #pinList .memory { margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -73,6 +81,8 @@
     <textarea id="newContent" placeholder="记一条……"></textarea>
     <button class="primary" id="addBtn">保存</button>
   </div>
+  <button id="pinBar" class="pin-bar" hidden><span id="pinArrow">▶</span> 置顶记忆（<span id="pinCount">0</span> 条）</button>
+  <div id="pinList"></div>
   <div id="list"></div>
   <div id="pager" class="pager" hidden></div>
 </main>
@@ -90,6 +100,7 @@ let queue = Promise.resolve();   // 写请求串行队列，防止并发乱序
 let inFlight = 0;                // 队列中未完成的请求数，驱动"同步中"指示
 const PAGE_SIZE = 10;            // 列表每页条数（置顶板块不计入分页）
 let page = 1;
+let pinnedOpen = false;          // 置顶板块默认折叠，条上显示数量
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -169,8 +180,9 @@ function cardHTML(m) {
     </div>`;
   }
   const dateLine = m.pending ? "同步中…" : `${esc(m.updated_at.slice(0, 10))} · #${esc(m.id)}`;
+  const cls = `${m.pending ? " pending" : ""}${m.pinned ? " pinned-card" : ""}`;
   return `
-    <div class="memory${m.pending ? " pending" : ""}" data-key="${esc(m.key)}">
+    <div class="memory${cls}" data-key="${esc(m.key)}">
       <div class="date">${dateLine}</div>
       <div class="content">${esc(m.content)}</div>
       <div class="actions"><button class="editBtn">编辑</button><button class="danger delBtn">删除</button></div>
@@ -178,23 +190,39 @@ function cardHTML(m) {
 }
 
 function render() {
+  // 置顶板块：默认折叠，条上显示置顶数量
+  const pinnedItems = state.filter((m) => !!m.pinned);
+  const normalItems = state.filter((m) => !m.pinned);
+  const bar = $("#pinBar");
+  if (pinnedItems.length) {
+    bar.hidden = false;
+    $("#pinCount").textContent = pinnedItems.length;
+    $("#pinArrow").textContent = pinnedOpen ? "▼" : "▶";
+    $("#pinList").innerHTML = pinnedOpen ? pinnedItems.map(cardHTML).join("") : "";
+  } else {
+    bar.hidden = true;
+    $("#pinList").innerHTML = "";
+  }
+
   const list = $("#list");
   const pager = $("#pager");
-  if (!state.length) {
-    list.innerHTML = '<div class="empty">还没有任何记忆</div>';
+  if (!normalItems.length) {
+    list.innerHTML = state.length
+      ? '<div class="empty">没有更多记忆了</div>'
+      : '<div class="empty">还没有任何记忆</div>';
     pager.hidden = true;
     pager.innerHTML = "";
   } else {
-    const totalPages = Math.max(1, Math.ceil(state.length / PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(normalItems.length / PAGE_SIZE));
     if (page > totalPages) page = totalPages; // 删除后页数收缩，收敛页码
-    list.innerHTML = state
+    list.innerHTML = normalItems
       .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
       .map(cardHTML).join("");
     if (totalPages > 1) {
       pager.hidden = false;
       pager.innerHTML =
         `<button id="prevPage" ${page <= 1 ? "disabled" : ""}>上一页</button>` +
-        `<span>第 ${page} / ${totalPages} 页 · 共 ${state.length} 条</span>` +
+        `<span>第 ${page} / ${totalPages} 页 · 共 ${normalItems.length} 条</span>` +
         `<button id="nextPage" ${page >= totalPages ? "disabled" : ""}>下一页</button>`;
     } else {
       pager.hidden = true;
@@ -273,11 +301,19 @@ $("#addBtn").addEventListener("click", () => {
 });
 
 // 编辑中的输入实时同步到 editing，后台对账刷新后原文仍在
-$("#list").addEventListener("input", (e) => {
+function onListInput(e) {
   if (editing && e.target.matches("textarea")) editing.value = e.target.value;
+}
+
+$("#list").addEventListener("input", onListInput);
+$("#pinList").addEventListener("input", onListInput);
+
+$("#pinBar").addEventListener("click", () => {
+  pinnedOpen = !pinnedOpen;
+  render();
 });
 
-$("#list").addEventListener("click", (e) => {
+function onListClick(e) {
   const card = e.target.closest(".memory");
   if (!card) return;
   const key = card.dataset.key;
@@ -336,13 +372,16 @@ $("#list").addEventListener("click", (e) => {
       }
     });
   }
-});
+}
+
+$("#list").addEventListener("click", onListClick);
+$("#pinList").addEventListener("click", onListClick);
 
 $("#pager").addEventListener("click", (e) => {
   if (e.target.id === "prevPage" && page > 1) {
     page--;
     render();
-  } else if (e.target.id === "nextPage" && page < Math.ceil(state.length / PAGE_SIZE)) {
+  } else if (e.target.id === "nextPage" && page < Math.ceil(state.filter((m) => !m.pinned).length / PAGE_SIZE)) {
     page++;
     render();
   }

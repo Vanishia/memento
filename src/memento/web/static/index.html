@@ -177,8 +177,9 @@ function render() {
   }
   list.innerHTML = state.map(cardHTML).join("");
   if (editing) {
-    const ta = list.querySelector(`[data-key="${editing.key}"] textarea`);
+    const ta = document.querySelector(`[data-key="${editing.key}"] textarea`);
     if (ta) {
+      if (editing.height) ta.style.height = editing.height + "px";
       ta.focus();
       ta.setSelectionRange(ta.value.length, ta.value.length);
     }
@@ -258,7 +259,12 @@ $("#list").addEventListener("click", (e) => {
   if (idx === -1) return;
 
   if (e.target.classList.contains("editBtn")) {
-    editing = { key, value: state[idx].content };
+    const contentEl = card.querySelector(".content");
+    editing = {
+      key,
+      value: state[idx].content,
+      height: contentEl ? contentEl.offsetHeight : 0, // 编辑框初始高度 = 浏览时的内容高度
+    };
     render();
   } else if (e.target.classList.contains("saveBtn")) {
     const content = (editing ? editing.value : "").trim();

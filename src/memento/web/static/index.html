@@ -49,6 +49,11 @@
     background: #c00; color: #fff; padding: 8px 16px;
     border-radius: 6px; font-size: 13px; z-index: 10;
   }
+  .pager {
+    display: flex; justify-content: center; align-items: center;
+    gap: 12px; margin: 16px 0 8px; font-size: 13px; color: #666;
+  }
+  .pager button { font-size: 13px; padding: 3px 10px; }
 </style>
 </head>
 <body>
@@ -69,6 +74,7 @@
     <button class="primary" id="addBtn">保存</button>
   </div>
   <div id="list"></div>
+  <div id="pager" class="pager" hidden></div>
 </main>
 <div id="toast" hidden></div>
 
@@ -82,6 +88,8 @@ let editing = null;              // 正在编辑的卡片 {key, value}，保证�
 const pendingIds = {};           // 乐观新增的临时 key → 服务端 id
 let queue = Promise.resolve();   // 写请求串行队列，防止并发乱序
 let inFlight = 0;                // 队列中未完成的请求数，驱动"同步中"指示
+const PAGE_SIZE = 10;            // 列表每页条数（置顶板块不计入分页）
+let page = 1;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -171,11 +179,28 @@ function cardHTML(m) {
 
 function render() {
   const list = $("#list");
+  const pager = $("#pager");
   if (!state.length) {
     list.innerHTML = '<div class="empty">还没有任何记忆</div>';
-    return;
+    pager.hidden = true;
+    pager.innerHTML = "";
+  } else {
+    const totalPages = Math.max(1, Math.ceil(state.length / PAGE_SIZE));
+    if (page > totalPages) page = totalPages; // 删除后页数收缩，收敛页码
+    list.innerHTML = state
+      .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+      .map(cardHTML).join("");
+    if (totalPages > 1) {
+      pager.hidden = false;
+      pager.innerHTML =
+        `<button id="prevPage" ${page <= 1 ? "disabled" : ""}>上一页</button>` +
+        `<span>第 ${page} / ${totalPages} 页 · 共 ${state.length} 条</span>` +
+        `<button id="nextPage" ${page >= totalPages ? "disabled" : ""}>下一页</button>`;
+    } else {
+      pager.hidden = true;
+      pager.innerHTML = "";
+    }
   }
-  list.innerHTML = state.map(cardHTML).join("");
   if (editing) {
     const ta = document.querySelector(`[data-key="${editing.key}"] textarea`);
     if (ta) {
@@ -226,6 +251,7 @@ $("#addBtn").addEventListener("click", () => {
     pending: true,
   };
   insertByOrder(state, item);
+  page = 1; // 新记忆排在最前，跳回第一页
   render();
   enqueue(async () => {
     try {
@@ -309,6 +335,16 @@ $("#list").addEventListener("click", (e) => {
         await load().catch(() => {});
       }
     });
+  }
+});
+
+$("#pager").addEventListener("click", (e) => {
+  if (e.target.id === "prevPage" && page > 1) {
+    page--;
+    render();
+  } else if (e.target.id === "nextPage" && page < Math.ceil(state.length / PAGE_SIZE)) {
+    page++;
+    render();
   }
 });
 

@@ -32,12 +32,15 @@ async def main() -> None:
 
             r = await session.call_tool("write", {"content": "mcp 冒烟第一条"})
             print("write ->", r.content[0].text)
+            first_id = r.content[0].text.split("id=")[1].rstrip("）")
             r = await session.call_tool("write", {"content": "mcp 冒烟第二条"})
             print("write ->", r.content[0].text)
 
-            r = await session.call_tool("edit", {"id": 1, "content": "mcp 冒烟第一条（已改）"})
+            r = await session.call_tool(
+                "edit", {"id": first_id, "content": "mcp 冒烟第一条（已改）"}
+            )
             print("edit  ->", r.content[0].text)
-            r = await session.call_tool("edit", {"id": 999, "content": "x"})
+            r = await session.call_tool("edit", {"id": "@@", "content": "x"})
             assert "不存在" in r.content[0].text
             print("edit 不存在 id ->", r.content[0].text)
 
@@ -46,7 +49,8 @@ async def main() -> None:
             print("pull ->")
             print(text)
             assert "已改" in text.splitlines()[0], "edit 后应置顶"
-            assert "999" not in text
+            assert first_id in text, "pull 应包含 id"
+            assert "@@" not in text
             print("MCP 冒烟全部通过")
 
 

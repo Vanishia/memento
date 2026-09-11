@@ -92,7 +92,7 @@ def create_memory(body: MemoryIn, _: None = Depends(require_auth)) -> dict:
 
 @app.put("/api/memories/{memory_id}")
 def update_memory(
-    memory_id: int, body: MemoryIn, _: None = Depends(require_auth)
+    memory_id: str, body: MemoryIn, _: None = Depends(require_auth)
 ) -> dict:
     if not service.edit_memory(memory_id, body.content):
         raise HTTPException(status_code=404, detail="记忆不存在")
@@ -100,7 +100,7 @@ def update_memory(
 
 
 @app.delete("/api/memories/{memory_id}")
-def delete_memory(memory_id: int, _: None = Depends(require_auth)) -> dict:
+def delete_memory(memory_id: str, _: None = Depends(require_auth)) -> dict:
     if not service.delete_memory(memory_id):
         raise HTTPException(status_code=404, detail="记忆不存在")
     return {"ok": True}

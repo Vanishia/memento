@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import random
 import sqlite3
+import string
 
 from . import config
 
+# 随机两位字母 id：无顺序语义，避免模型把数字大小当作记忆的新旧/重要程度
+_ID_ALPHABET = string.ascii_lowercase
+
+
+def random_id() -> str:
+    return "".join(random.choices(_ID_ALPHABET, k=2))
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS memories (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    id         TEXT PRIMARY KEY,
     content    TEXT    NOT NULL,
     created_at TEXT    NOT NULL,
     updated_at TEXT    NOT NULL
@@ -29,3 +39,40 @@ def get_conn() -> sqlite3.Connection:
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        cols = conn.execute("PRAGMA table_info(memories)").fetchall()
+        # 旧库 id 为 INTEGER 自增：重建表，回填随机两位字母 id
+        if cols and cols[0][1] == "id" and cols[0][2].upper() == "INTEGER":
+            _migrate_text_id(conn)
+
+
+def _migrate_text_id(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT content, created_at, updated_at FROM memories ORDER BY id"
+    ).fetchall()
+    conn.execute("ALTER TABLE memories RENAME TO memories_old")
+    conn.execute(
+        """
+        CREATE TABLE memories (
+            id         TEXT PRIMARY KEY,
+            content    TEXT    NOT NULL,
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memories_updated"
+        " ON memories(updated_at DESC, id DESC)"
+    )
+    used: set[str] = set()
+    for row in rows:
+        memory_id = random_id()
+        while memory_id in used:
+            memory_id = random_id()
+        used.add(memory_id)
+        conn.execute(
+            "INSERT INTO memories (id, content, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?)",
+            (memory_id, row["content"], row["created_at"], row["updated_at"]),
+        )
+    conn.execute("DROP TABLE memories_old")

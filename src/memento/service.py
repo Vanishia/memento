@@ -17,28 +17,30 @@ def _now() -> str:
     return datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
-def write_memory(content: str) -> int:
+def write_memory(content: str) -> str:
     return repository.create(content, _now())
 
 
-def edit_memory(memory_id: int, content: str) -> bool:
+def edit_memory(memory_id: str, content: str) -> bool:
     return repository.update(memory_id, content, _now())
 
 
-def delete_memory(memory_id: int) -> bool:
+def delete_memory(memory_id: str) -> bool:
     return repository.delete(memory_id)
 
 
-def memory_exists(memory_id: int) -> bool:
+def memory_exists(memory_id: str) -> bool:
     return repository.get(memory_id) is not None
 
 
 def pull_memories(limit: int = PULL_LIMIT) -> str:
-    """注入给 LLM 的文本：只含日期，不含具体时间。"""
+    """注入给 LLM 的文本：每行 `[id 日期] 内容`，id 供 edit 精确指定条目。"""
     rows = repository.list_latest(limit)
     if not rows:
         return "(还没有任何记忆)"
-    return "\n".join(f"[{r['updated_at'][:10]}] {r['content']}" for r in rows)
+    return "\n".join(
+        f"[{r['id']} {r['updated_at'][:10]}] {r['content']}" for r in rows
+    )
 
 
 def list_memories() -> list[dict]:

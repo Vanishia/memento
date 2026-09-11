@@ -42,7 +42,7 @@ async def main() -> None:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert [t.name for t in tools.tools] == ["pull", "write", "edit"]
+                assert [t.name for t in tools.tools] == ["pull", "write", "edit", "pin"]
                 r = await session.call_tool("write", {"content": "http 模式冒烟"})
                 print("write ->", r.content[0].text)
                 r = await session.call_tool("pull", {})

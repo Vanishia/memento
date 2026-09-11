@@ -46,13 +46,40 @@ def get(memory_id: str) -> sqlite3.Row | None:
         return conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
 
 
-def list_latest(limit: int) -> list[sqlite3.Row]:
+def set_pinned(memory_id: str, pinned: bool) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE memories SET pinned = ? WHERE id = ?",
+            (int(pinned), memory_id),
+        )
+        return cur.rowcount > 0
+
+
+def count_pinned() -> int:
     with get_conn() as conn:
         return conn.execute(
-            f"SELECT * FROM memories ORDER BY {_ORDER} LIMIT ?", (limit,)
+            "SELECT COUNT(*) FROM memories WHERE pinned = 1"
+        ).fetchone()[0]
+
+
+def list_pinned() -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT * FROM memories WHERE pinned = 1 ORDER BY {_ORDER}"
+        ).fetchall()
+
+
+def list_latest(limit: int) -> list[sqlite3.Row]:
+    """最近的短期（未置顶）记忆。"""
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT * FROM memories WHERE pinned = 0 ORDER BY {_ORDER} LIMIT ?",
+            (limit,),
         ).fetchall()
 
 
 def list_all() -> list[sqlite3.Row]:
     with get_conn() as conn:
-        return conn.execute(f"SELECT * FROM memories ORDER BY {_ORDER}").fetchall()
+        return conn.execute(
+            f"SELECT * FROM memories ORDER BY pinned DESC, {_ORDER}"
+        ).fetchall()

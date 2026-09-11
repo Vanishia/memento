@@ -35,6 +35,14 @@ def edit(id: str, content: str) -> str:
     return f"错误：不存在 id={id} 的记忆"
 
 
+@mcp.tool()
+def pin(id: str, unpin: bool = False) -> str:
+    """置顶重要的、长期有效的记忆，可解除。id 为 pull 返回行首的两位字母编号，unpin=true 时解除置顶。"""
+    if unpin:
+        return service.unpin_memory(id)
+    return service.pin_memory(id)
+
+
 def main() -> None:
     """stdio 模式：由本机 MCP 客户端直接拉起。"""
     init_db()

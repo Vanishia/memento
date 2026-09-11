@@ -11,6 +11,8 @@ TZ = ZoneInfo("Asia/Shanghai")
 
 PULL_LIMIT = 5
 
+PIN_LIMIT = 15
+
 
 def _now() -> str:
     # 保留微秒，保证同秒内多次写/改仍有严格的排序先后
@@ -33,14 +35,44 @@ def memory_exists(memory_id: str) -> bool:
     return repository.get(memory_id) is not None
 
 
+def pin_memory(memory_id: str) -> str:
+    row = repository.get(memory_id)
+    if row is None:
+        return f"错误：不存在 id={memory_id} 的记忆"
+    if row["pinned"]:
+        return f"已置顶（id={memory_id}）"
+    if repository.count_pinned() >= PIN_LIMIT:
+        return "已经达到置顶上限，可 unpin 部分记忆、或将部分记忆合并为一条"
+    repository.set_pinned(memory_id, True)
+    return f"已置顶（id={memory_id}）"
+
+
+def unpin_memory(memory_id: str) -> str:
+    row = repository.get(memory_id)
+    if row is None:
+        return f"错误：不存在 id={memory_id} 的记忆"
+    if not row["pinned"]:
+        return f"该记忆未置顶（id={memory_id}）"
+    repository.set_pinned(memory_id, False)
+    return f"已解除置顶（id={memory_id}）"
+
+
+def _format_line(r) -> str:
+    return f"[{r['id']} {r['updated_at'][:10]}] {r['content']}"
+
+
 def pull_memories(limit: int = PULL_LIMIT) -> str:
-    """注入给 LLM 的文本：每行 `[id 日期] 内容`，id 供 edit 精确指定条目。"""
-    rows = repository.list_latest(limit)
-    if not rows:
+    """注入给 LLM 的文本：置顶在前、短期在后，每行 `[id 日期] 内容`，id 供 edit 精确指定条目。"""
+    pinned_rows = repository.list_pinned()
+    recent_rows = repository.list_latest(limit)
+    if not pinned_rows and not recent_rows:
         return "(还没有任何记忆)"
-    return "\n".join(
-        f"[{r['id']} {r['updated_at'][:10]}] {r['content']}" for r in rows
-    )
+    sections = []
+    if pinned_rows:
+        sections.append("置顶：\n" + "\n".join(_format_line(r) for r in pinned_rows))
+    if recent_rows:
+        sections.append("短期：\n" + "\n".join(_format_line(r) for r in recent_rows))
+    return "\n\n".join(sections)
 
 
 def list_memories() -> list[dict]:

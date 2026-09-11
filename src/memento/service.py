@@ -101,6 +101,8 @@ def list_memories() -> list[dict]:
             "content": r["content"],
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
+            # Web UI 乐观更新需要按 pinned 分区精确保留插入位置
+            "pinned": r["pinned"],
         }
         for r in repository.list_all()
     ]

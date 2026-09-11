@@ -42,6 +42,13 @@
   .error { color: #c00; font-size: 13px; }
   .empty { color: #888; text-align: center; padding: 40px 0; }
   #logoutBtn { font-size: 13px; }
+  #sync { font-size: 12px; color: #888; font-weight: normal; margin-right: 8px; }
+  .memory.pending { opacity: 0.55; }
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #c00; color: #fff; padding: 8px 16px;
+    border-radius: 6px; font-size: 13px; z-index: 10;
+  }
 </style>
 </head>
 <body>
@@ -56,16 +63,25 @@
 </div>
 
 <main id="app" hidden>
-  <h1>Memento <button id="logoutBtn" hidden>退出登录</button></h1>
+  <h1>Memento <span><span id="sync" hidden>同步中…</span><button id="logoutBtn" hidden>退出登录</button></span></h1>
   <div class="new-box">
     <textarea id="newContent" placeholder="记一条……"></textarea>
     <button class="primary" id="addBtn">保存</button>
   </div>
   <div id="list"></div>
 </main>
+<div id="toast" hidden></div>
 
 <script>
 const $ = (s) => document.querySelector(s);
+
+// 本地状态是渲染的唯一来源：写操作先改本地、立即渲染，请求放后台队列串行执行，
+// 回来后再拉全量对账，因此跨洋高延迟不会阻塞操作。
+let state = [];
+let editing = null;              // 正在编辑的卡片 {key, value}，保证后台刷新不打断输入
+const pendingIds = {};           // 乐观新增的临时 key → 服务端 id
+let queue = Promise.resolve();   // 写请求串行队列，防止并发乱序
+let inFlight = 0;                // 队列中未完成的请求数，驱动"同步中"指示
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -97,24 +113,198 @@ function esc(s) {
   return d.innerHTML;
 }
 
-function render(memories) {
+function updateSyncUI() {
+  $("#sync").hidden = inFlight === 0;
+}
+
+// 写操作进队列串行执行；单条失败不阻断后续，错误提示与回滚由 op 自己处理
+function enqueue(op) {
+  inFlight++;
+  updateSyncUI();
+  queue = queue.then(op).catch(() => {}).finally(() => {
+    inFlight--;
+    updateSyncUI();
+  });
+}
+
+// 服务端时间戳格式（东八区）的本地近似，仅用于乐观渲染占位，同步后以服务端为准
+function nowShanghai() {
+  const n = new Date();
+  const s = new Date(n.getTime() + (n.getTimezoneOffset() + 480) * 60000);
+  const p = (x) => String(x).padStart(2, "0");
+  return `${s.getUTCFullYear()}-${p(s.getUTCMonth() + 1)}-${p(s.getUTCDate())} ` +
+    `${p(s.getUTCHours())}:${p(s.getUTCMinutes())}:${p(s.getUTCSeconds())}`;
+}
+
+// 与服务端 ORDER BY pinned DESC, updated_at DESC, id DESC 一致
+function cmpServer(a, b) {
+  if (!!b.pinned !== !!a.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+  if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? 1 : -1;
+}
+
+function insertByOrder(arr, item) {
+  const i = arr.findIndex((m) => cmpServer(m, item) > 0);
+  arr.splice(i === -1 ? arr.length : i, 0, item);
+}
+
+function cardHTML(m) {
+  if (editing && editing.key === m.key) {
+    return `
+    <div class="memory" data-key="${esc(m.key)}">
+      <textarea>${esc(editing.value)}</textarea>
+      <div class="actions">
+        <button class="primary saveBtn">保存</button>
+        <button class="cancelBtn">取消</button>
+      </div>
+    </div>`;
+  }
+  const dateLine = m.pending ? "同步中…" : `${esc(m.updated_at.slice(0, 10))} · #${esc(m.id)}`;
+  return `
+    <div class="memory${m.pending ? " pending" : ""}" data-key="${esc(m.key)}">
+      <div class="date">${dateLine}</div>
+      <div class="content">${esc(m.content)}</div>
+      <div class="actions"><button class="editBtn">编辑</button><button class="danger delBtn">删除</button></div>
+    </div>`;
+}
+
+function render() {
   const list = $("#list");
-  if (!memories.length) {
+  if (!state.length) {
     list.innerHTML = '<div class="empty">还没有任何记忆</div>';
     return;
   }
-  list.innerHTML = memories.map((m) => `
-    <div class="memory" data-id="${m.id}">
-      <div class="date">${esc(m.updated_at.slice(0, 10))} · #${m.id}</div>
-      <div class="content">${esc(m.content)}</div>
-      <div class="actions"><button class="editBtn">编辑</button><button class="danger delBtn">删除</button></div>
-    </div>
-  `).join("");
+  list.innerHTML = state.map(cardHTML).join("");
+  if (editing) {
+    const ta = list.querySelector(`[data-key="${editing.key}"] textarea`);
+    if (ta) {
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+  }
 }
 
+// 拉服务端全量对账；尚未被服务端确认的乐观条目保留本地（按服务端顺序插入）
 async function load() {
-  render(await api("/api/memories"));
+  const data = await api("/api/memories");
+  const serverItems = data.map((m) => ({ ...m, key: m.id, pending: false }));
+  const carried = [];
+  for (const p of state) {
+    if (!p.pending) continue;
+    const rid = pendingIds[p.key];
+    if (rid && serverItems.some((m) => m.id === rid)) continue; // 服务端已有，以服务端为准
+    carried.push(p);
+  }
+  state = serverItems;
+  for (const p of carried) insertByOrder(state, p);
+  render();
 }
+
+let toastTimer = null;
+function showError(msg) {
+  const t = $("#toast");
+  t.textContent = `操作失败：${msg}（已恢复服务端状态）`;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
+}
+
+// 乐观新增：立即上屏（半透明 + "同步中…"），后台落库
+$("#addBtn").addEventListener("click", () => {
+  const content = $("#newContent").value.trim();
+  if (!content) return;
+  $("#newContent").value = "";
+  const item = {
+    key: `tmp-${Math.random().toString(36).slice(2, 8)}`,
+    id: "",
+    content,
+    created_at: "",
+    updated_at: nowShanghai(),
+    pinned: 0,
+    pending: true,
+  };
+  insertByOrder(state, item);
+  render();
+  enqueue(async () => {
+    try {
+      const res = await api("/api/memories", { method: "POST", body: JSON.stringify({ content }) });
+      pendingIds[item.key] = res.id;
+      if (state.includes(item)) {
+        item.id = res.id;
+        item.pending = false;
+      }
+      await load();
+    } catch (err) {
+      // 新增失败：撤下乐观卡片，输入内容归还文本框
+      if (state.includes(item)) state.splice(state.indexOf(item), 1);
+      if (!$("#newContent").value.trim()) $("#newContent").value = content;
+      render();
+      showError(err.message);
+    }
+  });
+});
+
+// 编辑中的输入实时同步到 editing，后台对账刷新后原文仍在
+$("#list").addEventListener("input", (e) => {
+  if (editing && e.target.matches("textarea")) editing.value = e.target.value;
+});
+
+$("#list").addEventListener("click", (e) => {
+  const card = e.target.closest(".memory");
+  if (!card) return;
+  const key = card.dataset.key;
+  const idx = state.findIndex((m) => m.key === key);
+  if (idx === -1) return;
+
+  if (e.target.classList.contains("editBtn")) {
+    editing = { key, value: state[idx].content };
+    render();
+  } else if (e.target.classList.contains("saveBtn")) {
+    const content = (editing ? editing.value : "").trim();
+    if (!content) return;
+    const item = state[idx];
+    editing = null;
+    // 乐观保存：立即退出编辑态、按最新时间排到所属分区首位
+    state.splice(idx, 1);
+    item.content = content;
+    item.updated_at = nowShanghai();
+    item.pending = true;
+    insertByOrder(state, item);
+    render();
+    enqueue(async () => {
+      try {
+        // id 延迟到执行时解析：若该卡片还在等新增落库，此时已能拿到服务端 id
+        const id = pendingIds[item.key] || item.id;
+        await api(`/api/memories/${id}`, { method: "PUT", body: JSON.stringify({ content }) });
+        if (state.includes(item)) item.pending = false;
+        await load();
+      } catch (err) {
+        showError(err.message);
+        await load().catch(() => {});
+      }
+    });
+  } else if (e.target.classList.contains("cancelBtn")) {
+    editing = null;
+    render();
+  } else if (e.target.classList.contains("delBtn")) {
+    if (!confirm("确定删除这条记忆吗？")) return;
+    const item = state[idx];
+    state.splice(idx, 1);
+    if (editing && editing.key === key) editing = null;
+    render();
+    enqueue(async () => {
+      try {
+        const id = pendingIds[item.key] || item.id;
+        await api(`/api/memories/${id}`, { method: "DELETE" });
+        await load();
+      } catch (err) {
+        showError(err.message);
+        await load().catch(() => {});
+      }
+    });
+  }
+});
 
 $("#loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -130,50 +320,6 @@ $("#loginForm").addEventListener("submit", async (e) => {
   } catch (err) {
     if (err.message !== "unauthorized") $("#loginErr").textContent = err.message;
     else $("#loginErr").textContent = "密码错误";
-  }
-});
-
-$("#addBtn").addEventListener("click", async () => {
-  const btn = $("#addBtn");
-  const content = $("#newContent").value.trim();
-  if (!content || btn.disabled) return;
-  btn.disabled = true;
-  try {
-    await api("/api/memories", { method: "POST", body: JSON.stringify({ content }) });
-    $("#newContent").value = "";
-    await load();
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-$("#list").addEventListener("click", async (e) => {
-  const card = e.target.closest(".memory");
-  if (!card) return;
-  const id = card.dataset.id;
-
-  if (e.target.classList.contains("editBtn")) {
-    const contentEl = card.querySelector(".content");
-    const old = contentEl.textContent;
-    card.innerHTML = `
-      <textarea>${esc(old)}</textarea>
-      <div class="actions">
-        <button class="primary saveBtn">保存</button>
-        <button class="cancelBtn">取消</button>
-      </div>`;
-    card.querySelector("textarea").focus();
-  } else if (e.target.classList.contains("saveBtn")) {
-    const content = card.querySelector("textarea").value.trim();
-    if (!content) return;
-    await api(`/api/memories/${id}`, { method: "PUT", body: JSON.stringify({ content }) });
-    await load();
-  } else if (e.target.classList.contains("cancelBtn")) {
-    await load();
-  } else if (e.target.classList.contains("delBtn")) {
-    if (!confirm("确定删除这条记忆吗？")) return;
-    e.target.disabled = true;
-    await api(`/api/memories/${id}`, { method: "DELETE" });
-    await load();
   }
 });
 

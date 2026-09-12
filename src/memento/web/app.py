@@ -158,6 +158,11 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/favicon.svg")
+def favicon() -> FileResponse:
+    return FileResponse(STATIC_DIR / "favicon.svg")
+
+
 def main() -> None:
     init_db()
     import uvicorn

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memento</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -41,7 +42,13 @@
   }
   .error { color: #c00; font-size: 13px; }
   .empty { color: #888; text-align: center; padding: 40px 0; }
-  #logoutBtn { font-size: 13px; }
+  .brand { display: flex; align-items: center; gap: 6px; }
+  .brand svg { width: 22px; height: 22px; flex: none; }
+  #logoutBtn {
+    width: 30px; height: 30px; padding: 0; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #444;
+  }
   #sync { font-size: 12px; color: #888; font-weight: normal; margin-right: 8px; }
   .memory.pending { opacity: 0.55; }
   #toast {
@@ -67,7 +74,7 @@
 <body>
 
 <div id="login" hidden>
-  <h1 style="justify-content:center">Memento</h1>
+  <h1 style="justify-content:center"><span class="brand">Memento <svg viewBox="0 0 64 64" aria-hidden="true"><path fill="#222" fill-rule="evenodd" d="M12 32a17 10.5 0 1 0 34 0 17 10.5 0 1 0-34 0ZM17.9 29a2.6 2.6 0 1 0 5.2 0 2.6 2.6 0 1 0-5.2 0Z"/><path fill="#222" d="M43 32l13-9v18z"/></svg></span></h1>
   <form id="loginForm">
     <input type="password" id="pw" placeholder="密码" autocomplete="current-password" required>
     <button class="primary" type="submit" style="width:100%">登录</button>
@@ -76,7 +83,7 @@
 </div>
 
 <main id="app" hidden>
-  <h1>Memento <span><span id="sync" hidden>同步中…</span><button id="logoutBtn" hidden>退出登录</button></span></h1>
+  <h1><span class="brand">Memento <svg viewBox="0 0 64 64" aria-hidden="true"><path fill="#222" fill-rule="evenodd" d="M12 32a17 10.5 0 1 0 34 0 17 10.5 0 1 0-34 0ZM17.9 29a2.6 2.6 0 1 0 5.2 0 2.6 2.6 0 1 0-5.2 0Z"/><path fill="#222" d="M43 32l13-9v18z"/></svg></span><span><span id="sync" hidden>同步中…</span><button id="logoutBtn" hidden title="退出登录"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></button></span></h1>
   <div class="new-box">
     <textarea id="newContent" placeholder="记一条……"></textarea>
     <button class="primary" id="addBtn">保存</button>
@@ -109,8 +116,9 @@ async function api(path, opts = {}) {
   });
   if (res.status === 401) { showLogin(); throw new Error("unauthorized"); }
   if (!res.ok) {
-    let msg = res.statusText;
+    let msg = res.statusText || `HTTP ${res.status}`;
     try { msg = (await res.json()).detail || msg; } catch {}
+    if (res.status === 429) msg = "尝试太频繁，请稍后再试";  // nginx 返回的 429 是 HTML 页、statusText 为空
     throw new Error(msg);
   }
   return res.status === 204 ? null : res.json();

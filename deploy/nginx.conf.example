@@ -5,6 +5,24 @@
 # 鉴权分工：
 #   - Web UI（/）：应用自身校验 MEMENTO_PASSWORD（登录页 + Cookie）
 #   - MCP 端点（/mcp）：nginx 校验 Authorization: Bearer <token>
+#
+# 限速（limit_req_zone 必须位于 http 上下文；本文件按 README 方式拷入
+# sites-available 后被 include 进 http 块，直接放在文件顶部即可）：
+#   - memento_login：只针对 /api/login，每 IP 5 次/分钟（约 12s 一次），
+#     超出即 429，防暴力破解；burst=3 允许用户手滑连错几次
+#   - memento_api：其余请求的兜底限速，正常浏览远用不到这个量
+# 限速 key：站点在 Cloudflare 后面时，nginx 的 TCP 对端是 CF 边缘节点，
+# $binary_remote_addr 区分不了访客（同一节点 IP 下所有人共享一个计数桶），
+# 要改用 CF 写入的 CF-Connecting-IP；未接 CF 的部署没有该头，自动回落。
+# 注意：CF-Connecting-IP 只在"源站只接受 CF 连接"时可信，请把源站防火墙的
+# 443 限制到 CF 网段（https://www.cloudflare.com/ips/ 会列出全部网段），
+# 否则攻击者直连源站 IP 可伪造该头绕过限速。
+map $http_cf_connecting_ip $memento_client_ip {
+    "~."    $http_cf_connecting_ip;
+    default $binary_remote_addr;
+}
+limit_req_zone $memento_client_ip zone=memento_login:10m rate=5r/m;
+limit_req_zone $memento_client_ip zone=memento_api:10m rate=60r/m;
 
 server {
     listen 443 ssl;
@@ -13,6 +31,8 @@ server {
     # 以下两行由 certbot 自动配置，此处仅为示意
     # ssl_certificate     /etc/letsencrypt/live/memento.example.com/fullchain.pem;
     # ssl_certificate_key /etc/letsencrypt/live/memento.example.com/privkey.pem;
+
+    limit_req_status 429;  # 限速触发时返回 429 而不是默认的 503
 
     # ---- MCP HTTP 端点（Bearer token 鉴权）----
     # 把 change-me 改成一个足够长的随机串，例如 `openssl rand -hex 32` 的输出
@@ -32,8 +52,18 @@ server {
         proxy_read_timeout 3600s;
     }
 
+    # ---- 登录接口（精确匹配优先于 location /）：严格限速防爆破 ----
+    location = /api/login {
+        limit_req zone=memento_login burst=3 nodelay;
+        proxy_pass http://127.0.0.1:8765;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
     # ---- Web UI ----
     location / {
+        limit_req zone=memento_api burst=20 nodelay;
         proxy_pass http://127.0.0.1:8765;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;

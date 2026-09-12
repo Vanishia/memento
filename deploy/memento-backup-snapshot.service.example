@@ -1,0 +1,8 @@
+[Unit]
+Description=Memento backup snapshot (rotate old snapshots)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/memento
+EnvironmentFile=/opt/memento/.env
+ExecStart=/opt/memento/.venv/bin/memento-backup snapshot

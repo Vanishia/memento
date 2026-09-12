@@ -19,6 +19,7 @@ dependencies = [
 memento-mcp = "memento.mcp_server:main"
 memento-mcp-http = "memento.mcp_server:main_http"
 memento-web = "memento.web.app:main"
+memento-backup = "memento.backup:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

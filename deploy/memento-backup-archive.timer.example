@@ -1,0 +1,11 @@
+[Unit]
+Description=Memento archive timer (every 15 days)
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=15days
+Persistent=true
+Unit=memento-backup-archive.service
+
+[Install]
+WantedBy=timers.target

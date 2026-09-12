@@ -1,0 +1,8 @@
+[Unit]
+Description=Memento backup archive (never auto-deleted)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/memento
+EnvironmentFile=/opt/memento/.env
+ExecStart=/opt/memento/.venv/bin/memento-backup archive

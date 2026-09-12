@@ -1,0 +1,11 @@
+[Unit]
+Description=Memento snapshot timer (every 2 days)
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=2days
+Persistent=true
+Unit=memento-backup-snapshot.service
+
+[Install]
+WantedBy=timers.target

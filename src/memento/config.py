@@ -33,3 +33,14 @@ def mcp_host() -> str:
 
 def mcp_port() -> int:
     return int(os.environ.get("MEMENTO_MCP_PORT", "8766"))
+
+
+def backup_dir() -> Path:
+    """备份根目录：snapshots/（自动轮换）、archive/（长期保留）、restore-safety/。"""
+    default = str(db_path().parent / "backups")
+    return Path(os.environ.get("MEMENTO_BACKUP_DIR", default)).expanduser()
+
+
+def snapshot_keep_days() -> int:
+    """快照保留天数，早于该天数的旧快照在 snapshot 时自动删除。0 = 不自动清理。"""
+    return int(os.environ.get("MEMENTO_SNAPSHOT_KEEP_DAYS", "10"))

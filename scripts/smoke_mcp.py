@@ -6,6 +6,8 @@
 import asyncio
 import os
 import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -114,6 +116,24 @@ async def main() -> None:
             r = await session.call_tool("search", {"keyword": "上限测试", "since": "2099-01-01"})
             assert "没有匹配" in r.content[0].text
             print("search since 未来 ->", r.content[0].text)
+            # 空关键词：须带日期范围；带范围时退化为"取那几天的全部记忆"
+            r = await session.call_tool("search", {"keyword": ""})
+            assert "须限定" in r.content[0].text
+            print("search 空关键词无范围 ->", r.content[0].text)
+            today = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
+            r = await session.call_tool(
+                "search", {"keyword": "   ", "since": today, "until": today}
+            )
+            text = r.content[0].text
+            assert "上限测试" in text and "没有匹配" not in text
+            print("search 空关键词+今天 ->", len(text.splitlines()), "行")
+            assert "仅列出" in text, "满额时应提示可能被截断"
+            r = await session.call_tool(
+                "search", {"keyword": "", "since": today, "until": "2020-01-01"}
+            )
+            assert "没有匹配" in r.content[0].text and "须限定" not in r.content[0].text
+            print("search 空关键词+空范围 ->", r.content[0].text)
+
             r = await session.call_tool("search", {"keyword": "上限测试", "since": "bad-date"})
             assert "YYYY-MM-DD" in r.content[0].text
             print("search 日期非法 ->", r.content[0].text)

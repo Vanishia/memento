@@ -99,16 +99,28 @@ def list_all() -> list[sqlite3.Row]:
 def search(
     keyword: str, since: str = "", until: str = "", limit: int = 10
 ) -> list[sqlite3.Row]:
-    """关键词子串搜索。相关性 = 关键词首次出现位置靠前，同位置按更新时间倒序。"""
-    sql = "SELECT * FROM memories WHERE content LIKE '%' || ? || '%'"
-    args: list = [keyword]
+    """关键词子串搜索；keyword 为空时退化为按时间列条目（须带日期范围）。
+
+    日期范围按 created_at 过滤——"那天的记忆"指的是那天写的，编辑不该把旧条目
+    挪进今天的范围。排序仍按 updated_at：关键词出现位置靠前优先，同位置取最近动过的。
+    """
+    if keyword:
+        sql = "SELECT * FROM memories WHERE content LIKE '%' || ? || '%'"
+        args: list = [keyword]
+    else:
+        sql = "SELECT * FROM memories WHERE 1=1"
+        args = []
     if since:
-        sql += " AND substr(updated_at, 1, 10) >= ?"
+        sql += " AND substr(created_at, 1, 10) >= ?"
         args.append(since)
     if until:
-        sql += " AND substr(updated_at, 1, 10) <= ?"
+        sql += " AND substr(created_at, 1, 10) <= ?"
         args.append(until)
-    sql += " ORDER BY INSTR(content, ?) ASC, updated_at DESC LIMIT ?"
-    args += [keyword, limit]
+    if keyword:
+        sql += " ORDER BY INSTR(content, ?) ASC, updated_at DESC LIMIT ?"
+        args += [keyword, limit]
+    else:
+        sql += " ORDER BY updated_at DESC LIMIT ?"
+        args.append(limit)
     with get_conn() as conn:
         return conn.execute(sql, args).fetchall()

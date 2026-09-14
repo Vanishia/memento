@@ -63,7 +63,11 @@ def unpin_memory(memory_id: str) -> str:
 
 
 def _format_line(r) -> str:
-    return f"[{r['id']} {r['updated_at'][:10]}] {r['content']}"
+    """`[id 创建日]`；被编辑过的显示 `[id 创建日→更新日]`，让改动可见但不掩盖它写于哪天。"""
+    created = r["created_at"][:10]
+    updated = r["updated_at"][:10]
+    stamp = created if created == updated else f"{created}→{updated}"
+    return f"[{r['id']} {stamp}] {r['content']}"
 
 
 def _library_header(pinned: int, recent: int) -> str:
@@ -107,20 +111,28 @@ def pull_memories(extend: int = 0) -> str:
 
 
 def search_memories(keyword: str, since: str = "", until: str = "") -> str:
-    """搜索记忆，结果按相关性排序，每行 `[id 日期] 内容`。"""
+    """搜索记忆，每行 `[id 日期] 内容`。
+
+    keyword 为空时退化成按时间列条目——须限定日期范围，否则等于把整个库倒出来。
+    """
     keyword = keyword.strip()
-    if not keyword:
-        return "错误：请提供关键词"
     for label, date in (("since", since), ("until", until)):
         if date:
             try:
                 datetime.strptime(date, "%Y-%m-%d")
             except ValueError:
                 return f"错误：{label} 日期格式应为 YYYY-MM-DD"
+    if not keyword and not since and not until:
+        return "错误：关键词为空时须限定 since 或 until（否则会列出整个库）"
     rows = repository.search(keyword, since, until, SEARCH_LIMIT)
     if not rows:
-        return f"没有匹配「{keyword}」的记忆"
-    return "\n".join(_format_line(r) for r in rows)
+        subject = f"「{keyword}」" if keyword else "该日期范围"
+        return f"没有匹配{subject}的记忆"
+    lines = [_format_line(r) for r in rows]
+    if len(rows) >= SEARCH_LIMIT:
+        # 满额时可能还有更多被截断，说一声，免得把"看到 10 条"当成"只有 10 条"
+        lines.append(f"（仅列出 {SEARCH_LIMIT} 条，可能还有更多：收窄日期范围，或换个更具体的关键词）")
+    return "\n".join(lines)
 
 
 def list_memories() -> list[dict]:

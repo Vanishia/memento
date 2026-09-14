@@ -187,7 +187,11 @@ function cardHTML(m) {
       </div>
     </div>`;
   }
-  const dateLine = m.pending ? "同步中…" : `${esc(m.updated_at.slice(0, 10))} · #${esc(m.id)}`;
+  // 显示创建日期（改过的话补一个更新日期）；排序用 updated_at，与服务端 ORDER BY 一致
+  const created = (m.created_at || "").slice(0, 10);
+  const updated = (m.updated_at || "").slice(0, 10);
+  const stamp = created && created !== updated ? `${created}→${updated}` : created || updated;
+  const dateLine = m.pending ? "同步中…" : `${esc(stamp)} · #${esc(m.id)}`;
   const cls = `${m.pending ? " pending" : ""}${m.pinned ? " pinned-card" : ""}`;
   return `
     <div class="memory${cls}" data-key="${esc(m.key)}">

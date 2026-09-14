@@ -45,7 +45,7 @@ def pin(id: str, unpin: bool = False) -> str:
 
 @mcp.tool()
 def search(keyword: str, since: str = "", until: str = "") -> str:
-    """查找更久远的记忆。单关键词搜索，此工具只搜索记忆库内记忆。since/until 限定更新日期范围（YYYY-MM-DD），留空不限。"""
+    """查找更久远的记忆。单关键词搜索（子串匹配），此工具只搜索记忆库内记忆。since/until 限定日期范围（YYYY-MM-DD，按写入日过滤），留空不限。keyword 留空时按时间列出该范围内的记忆——相当于"取某几天的全部记忆"，此时必须带 since 或 until。"""
     return service.search_memories(keyword, since, until)
 
 

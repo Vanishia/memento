@@ -48,7 +48,9 @@ async def main() -> None:
             text = r.content[0].text
             print("pull ->")
             print(text)
-            assert "已改" in text.splitlines()[1], "edit 后短期区应置顶"
+            assert text.splitlines()[0].startswith("── 库"), "pull 首行应为库元信息"
+            first_line = next(l for l in text.splitlines() if l.startswith("["))
+            assert "已改" in first_line, "edit 后应排在短期区最前（最近更新优先）"
             assert first_id in text, "pull 应包含 id"
             assert "@@" not in text
 

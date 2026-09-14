@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from .db import get_conn, random_id
+from .db import get_conn, id_capacity, random_id
 
 _ORDER = "updated_at DESC, id DESC"
 
@@ -23,7 +23,7 @@ def create(content: str, ts: str) -> str:
             return memory_id
         except sqlite3.IntegrityError:
             continue
-    raise RuntimeError("无法生成唯一 id（记忆条数可能已接近 26*26 上限）")
+    raise RuntimeError(f"无法生成唯一 id（记忆条数可能已接近 {id_capacity()} 上限）")
 
 
 def update(memory_id: str, content: str, ts: str) -> bool:
@@ -76,6 +76,17 @@ def list_latest(limit: int) -> list[sqlite3.Row]:
             f"SELECT * FROM memories WHERE pinned = 0 ORDER BY {_ORDER} LIMIT ?",
             (limit,),
         ).fetchall()
+
+
+def count_total() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+
+
+def earliest_created() -> str | None:
+    """库内最早一条的创建时间。与列表排序用的 updated_at 不同，它不受编辑影响。"""
+    with get_conn() as conn:
+        return conn.execute("SELECT MIN(created_at) FROM memories").fetchone()[0]
 
 
 def list_all() -> list[sqlite3.Row]:

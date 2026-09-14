@@ -8,12 +8,21 @@ import string
 
 from . import config
 
-# 随机两位字母 id：无顺序语义，避免模型把数字大小当作记忆的新旧/重要程度
-_ID_ALPHABET = string.ascii_lowercase
+# 随机字母数字 id：无顺序语义，避免模型把数字大小当作记忆的新旧/重要程度
+# 去掉易混字符 0/o 与 1/l，被复述、被拼写时不会认错
+_ID_ALPHABET = string.digits[2:] + "".join(c for c in string.ascii_lowercase if c not in "ol")
+
+# id 长度。容量 = len(字母表) ** ID_LENGTH（默认 32 ** 3 = 32768）。
+# 加长、或更换字母表都不需要迁移：id 都是随机串，互不冲突，可共存于同一主键列。
+ID_LENGTH = 3
 
 
 def random_id() -> str:
-    return "".join(random.choices(_ID_ALPHABET, k=2))
+    return "".join(random.choices(_ID_ALPHABET, k=ID_LENGTH))
+
+
+def id_capacity() -> int:
+    return len(_ID_ALPHABET) ** ID_LENGTH
 
 
 SCHEMA = """
@@ -41,7 +50,7 @@ def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
         cols = {row[1]: row[2] for row in conn.execute("PRAGMA table_info(memories)")}
-        # 旧库 id 为 INTEGER 自增：重建表，回填随机两位字母 id（含 pinned 列）
+        # 旧库 id 为 INTEGER 自增：重建表，回填随机字母 id（含 pinned 列）
         if cols.get("id", "").upper() == "INTEGER":
             _migrate_text_id(conn)
         # TEXT id 但缺 pinned 列的旧库：直接补列

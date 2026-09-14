@@ -63,13 +63,28 @@ def _format_line(r) -> str:
     return f"[{r['id']} {r['updated_at'][:10]}] {r['content']}"
 
 
+def _library_header(pinned: int, recent: int) -> str:
+    """pull 首行的元信息：库的起点、总量、本次注入多少、有多少被挡在外面。
+
+    「库起点」用 created_at 的最小值——列表里显示的日期是 updated_at，随时会被编辑
+    刷新，所以起点不能从任何一条的显示日期反推，只能这样单独查出来。
+    """
+    total = repository.count_total()
+    since = repository.earliest_created()
+    shown = pinned + recent
+    line = f"库 {since[:10] if since else '空'} 起 · 共 {total} 条 · 本次注入 {shown} 条"
+    if total > shown:
+        line += f"（{total - shown} 条未显示，可 search）"
+    return f"── {line} ──"
+
+
 def pull_memories(limit: int = PULL_LIMIT) -> str:
-    """注入给 LLM 的文本：置顶在前、短期在后，每行 `[id 日期] 内容`，id 供 edit 精确指定条目。"""
+    """注入给 LLM 的文本：元信息 → 置顶 → 短期，每行 `[id 日期] 内容`，id 供 edit 精确指定条目。"""
     pinned_rows = repository.list_pinned()
     recent_rows = repository.list_latest(limit)
     if not pinned_rows and not recent_rows:
         return "(还没有任何记忆)"
-    sections = []
+    sections = [_library_header(len(pinned_rows), len(recent_rows))]
     if pinned_rows:
         sections.append("置顶：\n" + "\n".join(_format_line(r) for r in pinned_rows))
     if recent_rows:

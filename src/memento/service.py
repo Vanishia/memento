@@ -11,6 +11,9 @@ TZ = ZoneInfo("Asia/Shanghai")
 
 PULL_LIMIT = 5
 
+# 一次能往后追加多少条（翻页）。注入量等于每轮成本，翻得更深就该换检索手段
+PULL_EXTEND_MAX = 20
+
 PIN_LIMIT = 15
 
 SEARCH_LIMIT = 10
@@ -78,8 +81,19 @@ def _library_header(pinned: int, recent: int) -> str:
     return f"── {line} ──"
 
 
-def pull_memories(limit: int = PULL_LIMIT) -> str:
-    """注入给 LLM 的文本：元信息 → 置顶 → 短期，每行 `[id 日期] 内容`，id 供 edit 精确指定条目。"""
+def pull_memories(extend: int = 0) -> str:
+    """注入给 LLM 的文本：元信息 → 置顶 → 短期，每行 `[id 日期] 内容`，id 供 edit 精确指定条目。
+
+    extend：在默认 5 条之外追加的条数，用来一次往后翻页（0-20）。置顶恒定全给。
+    非法值回落到 0——调用方是模型，不能指望它每次都传对。
+    """
+    try:
+        extend = int(extend)
+    except (TypeError, ValueError):
+        extend = 0
+    extend = max(0, min(extend, PULL_EXTEND_MAX))
+
+    limit = PULL_LIMIT + extend
     pinned_rows = repository.list_pinned()
     recent_rows = repository.list_latest(limit)
     if not pinned_rows and not recent_rows:

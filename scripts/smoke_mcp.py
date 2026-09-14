@@ -75,6 +75,23 @@ async def main() -> None:
             r = await session.call_tool("pin", {"id": first_id, "unpin": True})
             assert "未置顶" in r.content[0].text
 
+            # 短期条数：默认 5 条，extend 在默认之外追加（往后翻页）
+            for i in range(20):
+                await session.call_tool("write", {"content": f"翻页测试第{i}条"})
+            r = await session.call_tool("pull", {})
+            text = r.content[0].text
+            assert len(text.split("短期：")[1].strip().splitlines()) == 5, "默认应注入 5 条"
+            print("pull 默认 -> 5 条 |", text.splitlines()[0])
+
+            r = await session.call_tool("pull", {"extend": 20})
+            n = len(r.content[0].text.split("短期：")[1].strip().splitlines())
+            assert n == 22, f"extend=20 应取 5+20=25 条（库内仅 22 条），实际 {n}"
+            print("pull extend=20 ->", n, "条")
+
+            r = await session.call_tool("pull", {"extend": -5})  # 非法值回落到 0
+            assert len(r.content[0].text.split("短期：")[1].strip().splitlines()) == 5
+            print("pull extend=-5 回落 -> 5 条")
+
             # 置顶上限：第 16 条应返回上限提示
             results = []
             for i in range(16):

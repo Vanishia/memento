@@ -15,9 +15,9 @@ mcp = FastMCP("memento", host=config.mcp_host(), port=config.mcp_port())
 
 
 @mcp.tool()
-def pull() -> str:
-    """拉取最近的记忆条目，格式 `[id 日期] 内容`。首行是库的元信息（起始日期、总条数、本次注入条数）。每次对话开始时调用以恢复上下文。"""
-    return service.pull_memories()
+def pull(extend: int = 0) -> str:
+    """拉取最近的记忆条目，格式 `[id 日期] 内容`。首行是库的元信息（起始日期、总条数、本次注入条数）。默认取最近 5 条；需要往回翻时传 extend（0-20），在 5 条之外追加同样多条，像翻页。置顶条目恒定全部返回。每次对话开始时调用以恢复上下文。"""
+    return service.pull_memories(extend)
 
 
 @mcp.tool()

@@ -42,6 +42,10 @@ class LoginIn(BaseModel):
     password: str
 
 
+class PinIn(BaseModel):
+    pinned: bool
+
+
 def _expected_token() -> str:
     """由密码派生的会话令牌；改密码即全员下线。"""
     return hmac.new(
@@ -150,6 +154,21 @@ def update_memory(
 def delete_memory(memory_id: str, _: None = Depends(require_auth)) -> dict:
     if not service.delete_memory(memory_id):
         raise HTTPException(status_code=404, detail="记忆不存在")
+    return {"ok": True}
+
+
+@app.put("/api/memories/{memory_id}/pin")
+def pin_memory(
+    memory_id: str, body: PinIn, _: None = Depends(require_auth)
+) -> dict:
+    if not service.memory_exists(memory_id):
+        raise HTTPException(status_code=404, detail="记忆不存在")
+    message = (
+        service.pin_memory(memory_id) if body.pinned
+        else service.unpin_memory(memory_id)
+    )
+    if message.startswith("已经达到"):
+        raise HTTPException(status_code=400, detail=message)
     return {"ok": True}
 
 

@@ -1,0 +1,64 @@
+"""Web API regression checks, using an isolated temporary database.
+
+Run with: python scripts/smoke_web.py
+"""
+
+import gc
+import os
+from tempfile import TemporaryDirectory
+import unittest
+import warnings
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+
+from memento import repository, service
+from memento.db import init_db
+from memento.web.app import app
+
+
+class WebTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.env = patch.dict(os.environ, {
+            "MEMENTO_DB_PATH": os.path.join(self.tmp.name, "web.db"),
+            "MEMENTO_PASSWORD": "",
+        })
+        self.env.start()
+        init_db()
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.client.close()
+        self.env.stop()
+        # Existing repository connections close on collection; force that before
+        # removing SQLite files on Windows.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ResourceWarning)
+            gc.collect()
+        self.tmp.cleanup()
+
+    def test_pin_is_idempotent_and_preserves_dates(self):
+        mid = repository.create("old memory", "2020-01-01 00:00:00")
+        for pinned in (True, True, False, False):
+            response = self.client.put(f"/api/memories/{mid}/pin", json={"pinned": pinned})
+            self.assertEqual(response.status_code, 200)
+            row = dict(repository.get(mid))
+            self.assertEqual(bool(row["pinned"]), pinned)
+            self.assertEqual(row["created_at"], "2020-01-01 00:00:00")
+            self.assertEqual(row["updated_at"], row["created_at"])
+        self.assertEqual(self.client.put("/api/memories/missing/pin", json={"pinned": True}).status_code, 404)
+
+    def test_pin_limit_and_auth(self):
+        ids = [service.write_memory(str(i)) for i in range(service.PIN_LIMIT + 1)]
+        for mid in ids[:-1]:
+            self.assertEqual(self.client.put(f"/api/memories/{mid}/pin", json={"pinned": True}).status_code, 200)
+        self.assertEqual(self.client.put(f"/api/memories/{ids[-1]}/pin", json={"pinned": True}).status_code, 400)
+        self.assertEqual(repository.get(ids[-1])["pinned"], 0)
+        self.assertEqual(self.client.put(f"/api/memories/{ids[0]}/pin", json={"pinned": True}).status_code, 200)
+        with patch.dict(os.environ, {"MEMENTO_PASSWORD": "test-password"}):
+            self.assertEqual(self.client.put(f"/api/memories/{ids[0]}/pin", json={"pinned": False}).status_code, 401)
+
+
+if __name__ == "__main__":
+    unittest.main()

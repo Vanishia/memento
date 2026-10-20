@@ -67,6 +67,10 @@
     background: #fff; border: 1px solid #e2e2e2; border-radius: 8px;
   }
   .memory.pinned-card { border-left: 3px solid #222; }
+  .memory { position: relative; }
+  .memory .date { padding-right: 32px; min-height: 24px; }
+  .pinBtn { position: absolute; top: 8px; right: 8px; padding: 4px; display: grid; place-items: center; border-color: transparent; color: #888; }
+  .pinBtn[aria-pressed="true"] { color: #222; background: #eee; }
   #pinList { margin-bottom: 10px; }
   #pinList .memory { margin-bottom: 8px; }
 </style>
@@ -108,6 +112,8 @@ let inFlight = 0;                // 队列中未完成的请求数，驱动"同�
 const PAGE_SIZE = 10;            // 列表每页条数（置顶板块不计入分页）
 let page = 1;
 let pinnedOpen = false;          // 置顶板块默认折叠，条上显示数量
+const unpinnedOrder = new Map(); // 本次浏览中取消置顶的条目临时排在普通列表前面
+let unpinSequence = 0;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -196,6 +202,7 @@ function cardHTML(m) {
   return `
     <div class="memory${cls}" data-key="${esc(m.key)}">
       <div class="date">${dateLine}</div>
+      <button class="pinBtn" title="${m.pinned ? '取消置顶' : '置顶'}" aria-label="${m.pinned ? '取消置顶' : '置顶'}" aria-pressed="${!!m.pinned}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4v4l-2 2-6-6 2-2h4l4-4zM8 16l-5 5"/></svg></button>
       <div class="content">${esc(m.content)}</div>
       <div class="actions"><button class="editBtn">编辑</button><button class="danger delBtn">删除</button></div>
     </div>`;
@@ -204,12 +211,14 @@ function cardHTML(m) {
 function render() {
   // 置顶板块：默认折叠，条上显示置顶数量
   const pinnedItems = state.filter((m) => !!m.pinned);
-  const normalItems = state.filter((m) => !m.pinned);
+  const normalItems = state.filter((m) => !m.pinned).sort((a, b) =>
+    (unpinnedOrder.get(b.id || b.key) || 0) - (unpinnedOrder.get(a.id || a.key) || 0));
   const bar = $("#pinBar");
   if (pinnedItems.length) {
     bar.hidden = false;
     $("#pinCount").textContent = pinnedItems.length;
     $("#pinArrow").textContent = pinnedOpen ? "▼" : "▶";
+    bar.setAttribute("aria-expanded", String(pinnedOpen));
     $("#pinList").innerHTML = pinnedOpen ? pinnedItems.map(cardHTML).join("") : "";
   } else {
     bar.hidden = true;
@@ -254,6 +263,8 @@ function render() {
 // 拉服务端全量对账；尚未被服务端确认的乐观条目保留本地（按服务端顺序插入）
 async function load() {
   const data = await api("/api/memories");
+  // 还有排队的写操作时，本地包含更新的意图，最后一个操作完成后再统一对账。
+  if (inFlight > 1) return;
   const serverItems = data.map((m) => ({ ...m, key: m.id, pending: false }));
   const carried = [];
   for (const p of state) {
@@ -297,6 +308,10 @@ $("#addBtn").addEventListener("click", () => {
     try {
       const res = await api("/api/memories", { method: "POST", body: JSON.stringify({ content }) });
       pendingIds[item.key] = res.id;
+      if (unpinnedOrder.has(item.key)) {
+        unpinnedOrder.set(res.id, unpinnedOrder.get(item.key));
+        unpinnedOrder.delete(item.key);
+      }
       if (state.includes(item)) {
         item.id = res.id;
         item.pending = false;
@@ -326,13 +341,51 @@ $("#pinBar").addEventListener("click", () => {
 });
 
 function onListClick(e) {
+  const button = e.target.closest("button");
+  if (!button) return;
   const card = e.target.closest(".memory");
   if (!card) return;
   const key = card.dataset.key;
   const idx = state.findIndex((m) => m.key === key);
   if (idx === -1) return;
 
-  if (e.target.classList.contains("editBtn")) {
+  if (button.classList.contains("pinBtn")) {
+    const item = state[idx];
+    const pinned = !item.pinned;
+    const orderKey = item.id || item.key;
+    const previousOrder = unpinnedOrder.get(orderKey);
+    item.pinned = pinned;
+    item.pending = true;
+    if (pinned) {
+      unpinnedOrder.delete(orderKey);
+      pinnedOpen = true;
+    } else {
+      unpinnedOrder.set(orderKey, ++unpinSequence);
+      page = 1;
+    }
+    render();
+    enqueue(async () => {
+      try {
+        const id = pendingIds[item.key] || item.id;
+        await api(`/api/memories/${id}/pin`, {
+          method: "PUT", body: JSON.stringify({ pinned }),
+        });
+        if (state.includes(item)) item.pending = false;
+        await load();
+      } catch (err) {
+        const id = pendingIds[item.key] || item.id || item.key;
+        if (state.includes(item)) {
+          item.pinned = !pinned;
+          item.pending = false;
+        }
+        if (previousOrder === undefined) unpinnedOrder.delete(id);
+        else unpinnedOrder.set(id, previousOrder);
+        render();
+        showError(err.message);
+        await load().catch(() => {});
+      }
+    });
+  } else if (button.classList.contains("editBtn")) {
     const contentEl = card.querySelector(".content");
     editing = {
       key,
@@ -340,7 +393,7 @@ function onListClick(e) {
       height: contentEl ? contentEl.offsetHeight : 0, // 编辑框初始高度 = 浏览时的内容高度
     };
     render();
-  } else if (e.target.classList.contains("saveBtn")) {
+  } else if (button.classList.contains("saveBtn")) {
     const content = (editing ? editing.value : "").trim();
     if (!content) return;
     const item = state[idx];
@@ -364,10 +417,10 @@ function onListClick(e) {
         await load().catch(() => {});
       }
     });
-  } else if (e.target.classList.contains("cancelBtn")) {
+  } else if (button.classList.contains("cancelBtn")) {
     editing = null;
     render();
-  } else if (e.target.classList.contains("delBtn")) {
+  } else if (button.classList.contains("delBtn")) {
     if (!confirm("确定删除这条记忆吗？")) return;
     const item = state[idx];
     state.splice(idx, 1);

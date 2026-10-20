@@ -141,6 +141,22 @@ def create_memory(body: MemoryIn, _: None = Depends(require_auth)) -> dict:
     return {"id": memory_id}
 
 
+@app.get("/api/memories/search")
+def search_memories(
+    keyword: str = "", since: str = "", until: str = "",
+    _: None = Depends(require_auth),
+) -> dict:
+    try:
+        items = service.find_memories(keyword, since, until)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {
+        "items": items,
+        "limit": service.SEARCH_LIMIT,
+        "may_have_more": len(items) >= service.SEARCH_LIMIT,
+    }
+
+
 @app.put("/api/memories/{memory_id}")
 def update_memory(
     memory_id: str, body: MemoryIn, _: None = Depends(require_auth)

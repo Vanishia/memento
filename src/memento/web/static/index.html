@@ -132,6 +132,19 @@
   }
   .pinBtn[aria-pressed="true"] { color: var(--ink); background: var(--hover); }
   #pinList:not(:empty) { margin-bottom: 24px; }
+  #searchBtn { border-color: transparent; background: transparent; color: var(--muted); }
+  #searchBtn[aria-expanded="true"], #searchBtn:hover { color: var(--ink); background: var(--hover); }
+  .search-panel { padding: 16px; margin-bottom: 24px; border: 1px solid var(--line); background: var(--surface); }
+  .search-query { display: flex; gap: 8px; }
+  .search-query input { flex: 1; min-width: 0; padding: 8px 10px; }
+  .search-query .icon-btn { width: 40px; height: 40px; }
+  .search-dates { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+  .search-dates label { flex: 1; min-width: 120px; color: var(--muted); font-size: 12px; }
+  .search-dates input { display: block; width: 100%; min-width: 0; padding: 6px 8px; margin-top: 4px; }
+  .search-help { color: var(--muted); font-size: 11px; margin: 12px 0 0; }
+  .search-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  #searchStatus { font-size: 12px; color: var(--muted); margin: 0; }
+  #clearSearchBtn { font-size: 12px; flex: none; background: transparent; }
   @media (max-width: 480px) {
     body { padding: 24px 16px 40px; }
     h1 { margin-bottom: 20px; font-size: 20px; }
@@ -154,14 +167,39 @@
 </div>
 
 <main id="app" hidden>
-  <h1><span class="brand">Memento <svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 32a17 10.5 0 1 0 34 0 17 10.5 0 1 0-34 0ZM17.9 29a2.6 2.6 0 1 0 5.2 0 2.6 2.6 0 1 0-5.2 0Z"/><path fill="currentColor" d="M43 32l13-9v18z"/></svg></span><span class="header-tools"><span id="sync" hidden>同步中…</span><button id="logoutBtn" class="icon-btn" hidden title="退出登录" aria-label="退出登录"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></button></span></h1>
+  <h1>
+    <span class="brand">Memento <svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 32a17 10.5 0 1 0 34 0 17 10.5 0 1 0-34 0ZM17.9 29a2.6 2.6 0 1 0 5.2 0 2.6 2.6 0 1 0-5.2 0Z"/><path fill="currentColor" d="M43 32l13-9v18z"/></svg></span>
+    <span class="header-tools">
+      <span id="sync" hidden>同步中…</span>
+      <button id="searchBtn" class="icon-btn" title="搜索记忆" aria-label="搜索记忆" aria-expanded="false" aria-controls="searchPanel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
+      <button id="logoutBtn" class="icon-btn" hidden title="退出登录" aria-label="退出登录"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></button>
+    </span>
+  </h1>
   <div class="new-box editor">
     <textarea id="newContent" placeholder="记一条……" aria-label="新记忆"></textarea>
     <div class="editor-tools">
       <button class="primary icon-btn" id="addBtn" title="保存记忆" aria-label="保存记忆"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true"><path d="M19 21H3V3h14l4 4v14h-2ZM7 3v6h10V3M7 21v-8h10v8"/></svg></button>
     </div>
   </div>
-  <button id="pinBar" class="pin-bar" hidden><span id="pinArrow">▶</span> 置顶记忆（<span id="pinCount">0</span> 条）</button>
+  <form id="searchPanel" class="search-panel" role="search" hidden>
+    <div class="search-query">
+      <input id="searchKeyword" type="search" placeholder="搜索记忆……" aria-label="搜索关键词" aria-describedby="searchHelp">
+      <button type="submit" class="primary icon-btn" title="搜索" aria-label="搜索"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
+    </div>
+    <div class="search-dates">
+      <label>开始日期<input id="searchSince" type="date"></label>
+      <label>结束日期<input id="searchUntil" type="date"></label>
+    </div>
+    <p id="searchHelp" class="search-help">按创建日期筛选；不填关键词时，请至少选一个日期。</p>
+  </form>
+  <section id="searchView" aria-label="搜索结果" hidden>
+    <div class="search-summary">
+      <p id="searchStatus" role="status"></p>
+      <button id="clearSearchBtn">返回全部</button>
+    </div>
+    <div id="searchResults"></div>
+  </section>
+  <button id="pinBar" class="pin-bar" aria-controls="pinList" hidden><span id="pinArrow">▶</span> 置顶记忆（<span id="pinCount">0</span> 条）</button>
   <div id="pinList"></div>
   <div id="list"></div>
   <div id="pager" class="pager" hidden></div>
@@ -183,6 +221,9 @@ let page = 1;
 let pinnedOpen = false;          // 置顶板块默认折叠，条上显示数量
 const unpinnedOrder = new Map(); // 本次浏览中取消置顶的条目临时排在普通列表前面
 let unpinSequence = 0;
+const pendingDeletes = new Set(); // 防止在途搜索响应把乐观删除的条目重新放回列表
+let searchState = null;          // 搜索结果保留后端相关性顺序，不混入普通列表的排序
+let searchRequest = 0;           // 只接受最新请求，关闭搜索时也使在途响应失效
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -321,8 +362,27 @@ function render() {
       pager.innerHTML = "";
     }
   }
+  const searching = searchState !== null;
+  $("#searchView").hidden = !searching;
+  $("#list").hidden = searching;
+  $("#pinList").hidden = searching;
+  if (searching) {
+    bar.hidden = true;
+    pager.hidden = true;
+    const { items, loading, error, may_have_more, limit } = searchState;
+    $("#searchView").setAttribute("aria-busy", String(loading));
+    $("#searchStatus").textContent = loading ? "搜索中…" : error ||
+      (may_have_more ? `显示前 ${limit} 条，可能还有更多，请缩小搜索范围` : `找到 ${items.length} 条记忆`);
+    // 结果的内容来自本地状态，所以编辑、删除、置顶仍可立即生效。
+    const results = items.map((m) => state.find((s) => s.id === m.id)).filter(Boolean);
+    $("#searchResults").innerHTML = results.map(cardHTML).join("") ||
+      (!loading && !error ? '<div class="empty">没有匹配的记忆</div>' : "");
+  } else {
+    $("#searchResults").innerHTML = "";
+  }
   if (editing) {
-    const ta = document.querySelector(`[data-key="${editing.key}"] textarea`);
+    const container = searching ? $("#searchResults") : state.find((m) => m.key === editing.key)?.pinned ? $("#pinList") : list;
+    const ta = container.querySelector(`[data-key="${editing.key}"] textarea`);
     if (ta) {
       if (editing.height) ta.style.height = editing.height + "px";
       ta.focus();
@@ -347,7 +407,62 @@ async function load() {
   state = serverItems;
   for (const p of carried) insertByOrder(state, p);
   render();
+  if (searchState) await runSearch(searchState.params, true);
 }
+
+async function runSearch(params, refreshing = false) {
+  const request = ++searchRequest;
+  searchState = {
+    params, items: refreshing && searchState ? searchState.items : [],
+    loading: true, error: "", may_have_more: false,
+  };
+  render();
+  try {
+    const result = await api(`/api/memories/search?${new URLSearchParams(params)}`);
+    if (request !== searchRequest) return;
+    // MCP 或其他客户端可能在页面打开后新增/修改记忆，搜索结果也要可见、可操作。
+    for (const m of result.items) {
+      if (pendingDeletes.has(m.id)) continue;
+      const local = state.find((s) => s.id === m.id);
+      if (!local) insertByOrder(state, { ...m, key: m.id, pending: false });
+      else if (inFlight === 0) Object.assign(local, m);
+    }
+    searchState = { params, ...result, loading: false, error: "" };
+  } catch (err) {
+    if (request !== searchRequest) return;
+    searchState = { params, items: [], loading: false, error: `搜索失败：${err.message}` };
+  }
+  render();
+}
+
+function closeSearch() {
+  ++searchRequest;
+  searchState = null;
+  $("#searchPanel").hidden = true;
+  $("#searchBtn").setAttribute("aria-expanded", "false");
+  render();
+  $("#searchBtn").focus();
+}
+
+$("#searchBtn").addEventListener("click", () => {
+  if (!$("#searchPanel").hidden) return closeSearch();
+  $("#searchPanel").hidden = false;
+  $("#searchBtn").setAttribute("aria-expanded", "true");
+  $("#searchKeyword").focus();
+});
+
+$("#searchPanel").addEventListener("submit", (e) => {
+  e.preventDefault();
+  runSearch({
+    keyword: $("#searchKeyword").value.trim(),
+    since: $("#searchSince").value,
+    until: $("#searchUntil").value,
+  });
+});
+$("#searchPanel").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); closeSearch(); }
+});
+$("#clearSearchBtn").addEventListener("click", closeSearch);
 
 let toastTimer = null;
 function showError(msg) {
@@ -405,6 +520,7 @@ function onListInput(e) {
 
 $("#list").addEventListener("input", onListInput);
 $("#pinList").addEventListener("input", onListInput);
+$("#searchResults").addEventListener("input", onListInput);
 
 $("#pinBar").addEventListener("click", () => {
   pinnedOpen = !pinnedOpen;
@@ -494,6 +610,7 @@ function onListClick(e) {
   } else if (button.classList.contains("delBtn")) {
     if (!confirm("确定删除这条记忆吗？")) return;
     const item = state[idx];
+    pendingDeletes.add(item.id);
     state.splice(idx, 1);
     if (editing && editing.key === key) editing = null;
     render();
@@ -505,6 +622,8 @@ function onListClick(e) {
       } catch (err) {
         showError(err.message);
         await load().catch(() => {});
+      } finally {
+        pendingDeletes.delete(item.id);
       }
     });
   }
@@ -512,6 +631,7 @@ function onListClick(e) {
 
 $("#list").addEventListener("click", onListClick);
 $("#pinList").addEventListener("click", onListClick);
+$("#searchResults").addEventListener("click", onListClick);
 
 $("#pager").addEventListener("click", (e) => {
   if (e.target.id === "prevPage" && page > 1) {

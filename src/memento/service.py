@@ -110,21 +110,27 @@ def pull_memories(extend: int = 0) -> str:
     return "\n\n".join(sections)
 
 
-def search_memories(keyword: str, since: str = "", until: str = "") -> str:
-    """搜索记忆，每行 `[id 日期] 内容`。
-
-    keyword 为空时退化成按时间列条目——须限定日期范围，否则等于把整个库倒出来。
-    """
+def find_memories(keyword: str, since: str = "", until: str = "") -> list[dict]:
+    """MCP 与 Web 共用的搜索校验和结果；日期按创建日过滤。"""
     keyword = keyword.strip()
     for label, date in (("since", since), ("until", until)):
         if date:
             try:
                 datetime.strptime(date, "%Y-%m-%d")
             except ValueError:
-                return f"错误：{label} 日期格式应为 YYYY-MM-DD"
+                raise ValueError(f"{label} 日期格式应为 YYYY-MM-DD") from None
     if not keyword and not since and not until:
-        return "错误：关键词为空时须限定 since 或 until（否则会列出整个库）"
-    rows = repository.search(keyword, since, until, SEARCH_LIMIT)
+        raise ValueError("关键词为空时须限定 since 或 until（否则会列出整个库）")
+    return [dict(r) for r in repository.search(keyword, since, until, SEARCH_LIMIT)]
+
+
+def search_memories(keyword: str, since: str = "", until: str = "") -> str:
+    """搜索记忆，每行 `[id 日期] 内容`；空关键词须限定日期范围。"""
+    keyword = keyword.strip()
+    try:
+        rows = find_memories(keyword, since, until)
+    except ValueError as exc:
+        return f"错误：{exc}"
     if not rows:
         subject = f"「{keyword}」" if keyword else "该日期范围"
         return f"没有匹配{subject}的记忆"

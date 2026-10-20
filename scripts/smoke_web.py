@@ -59,6 +59,30 @@ class WebTests(unittest.TestCase):
         with patch.dict(os.environ, {"MEMENTO_PASSWORD": "test-password"}):
             self.assertEqual(self.client.put(f"/api/memories/{ids[0]}/pin", json={"pinned": False}).status_code, 401)
 
+    def test_search_dates_order_limit_and_validation(self):
+        old = repository.create("needle appears first", "2020-01-01 00:00:00")
+        repository.update(old, "needle appears first", "2026-10-21 00:00:00")
+        repository.set_pinned(old, True)
+        repository.create("later needle", "2026-10-20 00:00:00")
+        response = self.client.get("/api/memories/search", params={"keyword": "needle"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"][0]["id"], old)
+        self.assertEqual(response.json()["items"][0]["pinned"], 1)
+        dated = self.client.get("/api/memories/search", params={"since": "2020-01-01", "until": "2020-01-01"})
+        self.assertEqual([m["id"] for m in dated.json()["items"]], [old])
+        for params in ({}, {"keyword": " "}, {"since": "invalid"}, {"since": "2026-02-30"}):
+            self.assertEqual(self.client.get("/api/memories/search", params=params).status_code, 400)
+        reversed_range = self.client.get("/api/memories/search", params={"since": "2026-10-21", "until": "2020-01-01"})
+        self.assertEqual(reversed_range.json()["items"], [])
+        self.assertEqual(self.client.get("/api/memories/search", params={"keyword": "no match"}).json()["items"], [])
+        for i in range(service.SEARCH_LIMIT + 1):
+            service.write_memory(f"many results {i}")
+        limited = self.client.get("/api/memories/search", params={"keyword": "many"}).json()
+        self.assertEqual(len(limited["items"]), service.SEARCH_LIMIT)
+        self.assertTrue(limited["may_have_more"])
+        with patch.dict(os.environ, {"MEMENTO_PASSWORD": "test-password"}):
+            self.assertEqual(self.client.get("/api/memories/search", params={"keyword": "needle"}).status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

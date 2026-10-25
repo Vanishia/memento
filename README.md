@@ -41,6 +41,8 @@ cp .env.example .env   # 按需修改，见下
 | `MEMENTO_HOST` | `127.0.0.1` | Web UI 监听地址 |
 | `MEMENTO_PORT` | `8765` | Web UI 端口 |
 | `MEMENTO_PASSWORD` | 空 | **Web UI 登录密码**；留空 = 免登录（仅限本机使用） |
+| `MEMENTO_SESSION_MAX_DAYS` | `30` | Web 会话绝对有效期；登录后到期即退出 |
+| `MEMENTO_SESSION_IDLE_DAYS` | `7` | 连续未访问 Web 面板的自动退出时间 |
 | `MEMENTO_MCP_HOST` | `127.0.0.1` | MCP HTTP 端点监听地址 |
 | `MEMENTO_MCP_PORT` | `8766` | MCP HTTP 端点端口 |
 | `MEMENTO_BACKUP_DIR` | `<数据库所在目录>/backups` | 备份根目录（`snapshots/`、`archive/`、`restore-safety/`） |
@@ -76,8 +78,8 @@ memento-web    # 或 python -m memento.web.app
 MEMENTO_PASSWORD=你的密码
 ```
 
-重启 `memento-web` 生效。之后打开 Web UI 会先要求输入密码：服务端校验通过后下发
-HttpOnly Cookie（30 天有效），前端不做任何密码校验。修改密码会使所有已登录会话失效。
+重启 `memento-web` 生效。之后打开 Web UI 会先要求输入密码。登录成功后服务端下发
+每个浏览器独立的 HttpOnly Cookie。会话最长 30 天，连续 7 天没有访问 Web 面板也会失效；修改密码会使所有已登录会话失效。
 留空则不启用鉴权，**只在监听 127.0.0.1 的本机场景下这么做**。
 
 ## VPS 部署（纯 Python + systemd + nginx）

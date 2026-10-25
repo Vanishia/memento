@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -22,7 +23,6 @@ from ..db import init_db
 
 STATIC_DIR = Path(__file__).parent / "static"
 COOKIE_NAME = "memento_session"
-COOKIE_MAX_AGE = 30 * 24 * 3600  # 30 天
 
 # 登录限速：按客户端 IP 记录连续失败次数，登录前 sleep 指数退避的惩罚延迟，
 # 拖慢在线暴力破解。内存态（单进程够用），重启即清零；nginx limit_req 是第一道防线。
@@ -46,22 +46,72 @@ class PinIn(BaseModel):
     pinned: bool
 
 
-def _expected_token() -> str:
-    """由密码派生的会话令牌；改密码即全员下线。"""
-    return hmac.new(
-        config.password().encode(), b"memento-session", hashlib.sha256
-    ).hexdigest()
+def _session_max_age() -> int:
+    return config.session_max_days() * 24 * 3600
+
+
+def _session_idle_age() -> int:
+    return config.session_idle_days() * 24 * 3600
+
+
+def _password_fingerprint() -> str:
+    return hashlib.sha256(config.password().encode()).hexdigest()
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _session_token(request: Request) -> str:
+    return request.cookies.get(COOKIE_NAME, "")
+
+
+def _valid_session(request: Request, *, touch: bool) -> bool:
+    if not config.password():
+        return True
+    token = _session_token(request)
+    if not token:
+        return False
+    now = int(time.time())
+    token_hash = _token_hash(token)
+    with _session_db() as conn:
+        row = conn.execute(
+            "SELECT last_seen_at, expires_at, password_fingerprint, revoked_at "
+            "FROM web_sessions WHERE token_hash = ?",
+            (token_hash,),
+        ).fetchone()
+        if row is None or row["revoked_at"] is not None:
+            return False
+        if row["password_fingerprint"] != _password_fingerprint():
+            return False
+        if row["expires_at"] <= now or row["last_seen_at"] + _session_idle_age() <= now:
+            conn.execute(
+                "UPDATE web_sessions SET revoked_at = ? WHERE token_hash = ?",
+                (now, token_hash),
+            )
+            return False
+        if touch:
+            conn.execute(
+                "UPDATE web_sessions SET last_seen_at = ? WHERE token_hash = ?",
+                (now, token_hash),
+            )
+        return True
+
+
+def _session_db():
+    # Keep the auth table in the same SQLite database as memories so existing
+    # backup/restore operations include it automatically.
+    from ..db import get_conn
+
+    return get_conn()
 
 
 def _authed(request: Request) -> bool:
-    if not config.password():
-        return True
-    token = request.cookies.get(COOKIE_NAME, "")
-    return hmac.compare_digest(token, _expected_token())
+    return _valid_session(request, touch=False)
 
 
 def require_auth(request: Request) -> None:
-    if not _authed(request):
+    if not _valid_session(request, touch=True):
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
@@ -101,6 +151,8 @@ def _clear_login_fail(ip: str) -> None:
 
 @app.get("/api/auth_status")
 def auth_status(request: Request) -> dict:
+    # This endpoint is deliberately read-only so a frontend status watcher
+    # cannot keep an idle session alive by polling it.
     return {"auth_required": bool(config.password()), "authed": _authed(request)}
 
 
@@ -114,10 +166,31 @@ def login(body: LoginIn, request: Request, response: Response) -> dict:
         _record_login_fail(ip)
         raise HTTPException(status_code=401, detail="密码错误")
     _clear_login_fail(ip)
+    now = int(time.time())
+    raw_token = secrets.token_urlsafe(32)
+    with _session_db() as conn:
+        # Old session rows are harmless after their password fingerprint no
+        # longer matches; prune expired/revoked rows while a user logs in.
+        conn.execute(
+            "DELETE FROM web_sessions WHERE revoked_at IS NOT NULL OR expires_at <= ?",
+            (now,),
+        )
+        conn.execute(
+            "INSERT INTO web_sessions "
+            "(token_hash, created_at, last_seen_at, expires_at, password_fingerprint) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                _token_hash(raw_token),
+                now,
+                now,
+                now + _session_max_age(),
+                _password_fingerprint(),
+            ),
+        )
     response.set_cookie(
         COOKIE_NAME,
-        _expected_token(),
-        max_age=COOKIE_MAX_AGE,
+        raw_token,
+        max_age=_session_max_age(),
         httponly=True,
         samesite="lax",
     )
@@ -125,7 +198,14 @@ def login(body: LoginIn, request: Request, response: Response) -> dict:
 
 
 @app.post("/api/logout")
-def logout(response: Response) -> dict:
+def logout(request: Request, response: Response) -> dict:
+    token = _session_token(request)
+    if token:
+        with _session_db() as conn:
+            conn.execute(
+                "UPDATE web_sessions SET revoked_at = ? WHERE token_hash = ?",
+                (int(time.time()), _token_hash(token)),
+            )
     response.delete_cookie(COOKIE_NAME)
     return {"ok": True}
 

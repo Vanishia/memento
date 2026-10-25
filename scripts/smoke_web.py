@@ -4,7 +4,10 @@ Run with: python scripts/smoke_web.py
 """
 
 import gc
+import hashlib
+import hmac
 import os
+import time
 from tempfile import TemporaryDirectory
 import unittest
 import warnings
@@ -14,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from memento import repository, service
 from memento.db import init_db
+from memento.db import get_conn
 from memento.web.app import app
 
 
@@ -82,6 +86,49 @@ class WebTests(unittest.TestCase):
         self.assertTrue(limited["may_have_more"])
         with patch.dict(os.environ, {"MEMENTO_PASSWORD": "test-password"}):
             self.assertEqual(self.client.get("/api/memories/search", params={"keyword": "needle"}).status_code, 401)
+
+    def test_new_sessions_are_per_client_and_old_cookie_is_rejected(self):
+        with patch.dict(os.environ, {"MEMENTO_PASSWORD": "test-password"}):
+            old_cookie = hmac.new(b"test-password", b"memento-session", hashlib.sha256).hexdigest()
+            self.client.cookies.set("memento_session", old_cookie)
+            self.assertEqual(self.client.get("/api/memories").status_code, 401)
+
+            first = TestClient(app)
+            second = TestClient(app)
+            try:
+                self.assertEqual(first.post("/api/login", json={"password": "test-password"}).status_code, 200)
+                self.assertEqual(second.post("/api/login", json={"password": "test-password"}).status_code, 200)
+                first_cookie = first.cookies.get("memento_session")
+                second_cookie = second.cookies.get("memento_session")
+                self.assertTrue(first_cookie and second_cookie and first_cookie != second_cookie)
+                self.assertEqual(first.get("/api/memories").status_code, 200)
+                self.assertEqual(second.get("/api/memories").status_code, 200)
+            finally:
+                first.close()
+                second.close()
+
+    def test_sessions_expire_after_idle_or_absolute_deadline(self):
+        with patch.dict(os.environ, {"MEMENTO_PASSWORD": "test-password"}):
+            self.assertEqual(self.client.post("/api/login", json={"password": "test-password"}).status_code, 200)
+            token = self.client.cookies.get("memento_session")
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE web_sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?",
+                    (int(time.time()) - 8 * 24 * 3600, int(time.time()) + 3600, token_hash),
+                )
+            self.assertEqual(self.client.get("/api/memories").status_code, 401)
+
+            self.client.cookies.clear()
+            self.assertEqual(self.client.post("/api/login", json={"password": "test-password"}).status_code, 200)
+            token = self.client.cookies.get("memento_session")
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE web_sessions SET expires_at = ? WHERE token_hash = ?",
+                    (int(time.time()) - 1, token_hash),
+                )
+            self.assertEqual(self.client.get("/api/memories").status_code, 401)
 
 
 if __name__ == "__main__":

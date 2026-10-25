@@ -224,6 +224,7 @@ let unpinSequence = 0;
 const pendingDeletes = new Set(); // 防止在途搜索响应把乐观删除的条目重新放回列表
 let searchState = null;          // 搜索结果保留后端相关性顺序，不混入普通列表的排序
 let searchRequest = 0;           // 只接受最新请求，关闭搜索时也使在途响应失效
+let authCheckTimer = null;       // 定期检查服务端会话是否已过期，不延长会话
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -241,6 +242,10 @@ async function api(path, opts = {}) {
 }
 
 function showLogin() {
+  if (authCheckTimer !== null) {
+    clearInterval(authCheckTimer);
+    authCheckTimer = null;
+  }
   $("#login").hidden = false;
   $("#app").hidden = true;
 }
@@ -248,6 +253,14 @@ function showLogin() {
 function showApp() {
   $("#login").hidden = true;
   $("#app").hidden = false;
+}
+
+function startAuthWatcher() {
+  if (authCheckTimer !== null) clearInterval(authCheckTimer);
+  authCheckTimer = setInterval(async () => {
+    const status = await api("/api/auth_status").catch(() => null);
+    if (status && status.auth_required && !status.authed) showLogin();
+  }, 60 * 1000);
 }
 
 function esc(s) {
@@ -654,6 +667,7 @@ $("#loginForm").addEventListener("submit", async (e) => {
     $("#pw").value = "";
     showApp();
     $("#logoutBtn").hidden = false;
+    startAuthWatcher();
     await load();
   } catch (err) {
     if (err.message !== "unauthorized") $("#loginErr").textContent = err.message;
@@ -673,6 +687,7 @@ $("#logoutBtn").addEventListener("click", async () => {
   } else {
     showApp();
     if (status && status.auth_required) $("#logoutBtn").hidden = false;
+    if (status && status.auth_required) startAuthWatcher();
     await load();
   }
 })();

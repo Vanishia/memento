@@ -27,6 +27,16 @@ def password() -> str:
     return os.environ.get("MEMENTO_PASSWORD", "")
 
 
+def session_max_days() -> int:
+    """浏览器会话的绝对有效期（天）。"""
+    return int(os.environ.get("MEMENTO_SESSION_MAX_DAYS", "30"))
+
+
+def session_idle_days() -> int:
+    """Web 会话无活动自动失效时间（天）。"""
+    return int(os.environ.get("MEMENTO_SESSION_IDLE_DAYS", "7"))
+
+
 def mcp_host() -> str:
     return os.environ.get("MEMENTO_MCP_HOST", "127.0.0.1")
 
